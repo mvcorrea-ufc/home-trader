@@ -7,8 +7,8 @@ edition = "2021" # Aligning with common practice
 
 [dependencies]
 # Dioxus GUI Framework
-dioxus = { workspace = true, version = "0.5" } # Inherit from workspace if defined there, or specify version
-dioxus-desktop = { workspace = true, version = "0.5" } # For desktop applications
+dioxus = { workspace = true } # Inherit from workspace
+dioxus-desktop = { workspace = true } # For desktop applications
 
 # Workspace inherited dependencies
 serde = { workspace = true }

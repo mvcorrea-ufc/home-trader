@@ -9,6 +9,7 @@ use crate::data::csv_parser::BrazilianCsvParser;
 use crate::data::market_data::MarketDataStore;
 use crate::indicators::{IndicatorCalculator, Sma, Ema, Rsi}; // Assuming these are the indicator types for now
 use shared::models::{Candle as DomainCandle, TimeFrame}; // Domain Candle
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 use tokio::sync::mpsc;
 use std::sync::Arc;
@@ -24,7 +25,7 @@ fn to_grpc_candle(domain_candle: &DomainCandle) -> GrpcCandle {
         low: domain_candle.low,
         close: domain_candle.close,
         volume: domain_candle.volume,
-        trades: domain_candle.trades,
+        trades: domain_candle.trades as i32,
     }
 }
 
@@ -82,7 +83,7 @@ impl TradingEngine for MyTradingEngine {
         }
     }
 
-    type GetMarketDataStream = mpsc::Receiver<Result<MarketDataResponse, Status>>;
+    type GetMarketDataStream = ReceiverStream<Result<MarketDataResponse, Status>>;
 
     async fn get_market_data(&self, request: Request<MarketDataRequest>) -> Result<Response<Self::GetMarketDataStream>, Status> {
         let req = request.into_inner();
@@ -125,7 +126,7 @@ impl TradingEngine for MyTradingEngine {
             }
         });
 
-        Ok(Response::new(rx))
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 
     async fn calculate_indicator(&self, request: Request<IndicatorRequest>) -> Result<Response<IndicatorResponse>, Status> {
@@ -193,4 +194,100 @@ impl TradingEngine for MyTradingEngine {
             filled_quantity: req.quantity,
         }))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // MarketDataStore is in super scope. Explicit for clarity if needed:
+    // use crate::data::market_data::MarketDataStore;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+    // DomainCandle is already an alias for shared::models::Candle in the outer scope.
+    // use shared::models::Candle as DomainCandle;
+    use tonic::Request;
+    use tempfile::NamedTempFile;
+    use std::io::Write;
+
+    // Helper to create a MyTradingEngine instance with a fresh MarketDataStore
+    fn create_test_engine() -> MyTradingEngine {
+        let market_data_store = Arc::new(RwLock::new(MarketDataStore::new()));
+        MyTradingEngine::new(market_data_store)
+    }
+
+    // Helper to create a dummy CSV file
+    fn create_dummy_csv(content: &str) -> NamedTempFile {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "{}", content).unwrap();
+        file.flush().unwrap(); // Ensure content is written to disk
+        file
+    }
+
+    #[tokio::test]
+    async fn test_load_csv_data_success() {
+        let engine = create_test_engine();
+        let csv_content = "Ativo;Data;Hora;Abertura;Máximo;Mínimo;Fechamento;Volume;Quantidade\nWINFUT;30/12/2024;18:20:00;124.080;124.090;123.938;123.983;600.822.115,84;24.228";
+        let tmp_file = create_dummy_csv(csv_content);
+        let file_path = tmp_file.path().to_str().unwrap().to_string();
+
+        let request = Request::new(LoadCsvRequest {
+            file_path: file_path.clone(),
+            symbol: "WINFUT".to_string(),
+        });
+
+        let response = engine.load_csv_data(request).await.unwrap().into_inner();
+
+        assert!(response.success);
+        assert_eq!(response.candles_loaded, 1);
+        assert!(response.message.contains("Loaded 1 candles"));
+
+        // Verify data in store
+        let store = engine.market_data_store.read().await;
+        let candles_in_store = store.get_candles("WINFUT", TimeFrame::Day1, None, None);
+        assert!(candles_in_store.is_some());
+        assert_eq!(candles_in_store.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_load_csv_data_parsing_error_file_not_found() {
+        let engine = create_test_engine();
+        let request = Request::new(LoadCsvRequest {
+            file_path: "non_existent_file.csv".to_string(),
+            symbol: "TEST".to_string(),
+        });
+
+        let result = engine.load_csv_data(request).await;
+        assert!(result.is_err());
+        let status = result.err().unwrap();
+        assert_eq!(status.code(), tonic::Code::Internal);
+        assert!(status.message().contains("Failed to parse CSV"));
+        assert!(status.message().contains("Failed to open CSV file"));
+    }
+
+    #[tokio::test]
+    async fn test_load_csv_data_parsing_error_bad_content() {
+        let engine = create_test_engine();
+        // Malformed data: "NOT_A_NUMBER" for Abertura, and also missing columns compared to header.
+        // The parser will likely fail on "Missing 'Máximo' field" first due to column count mismatch after header.
+        let csv_content = "Ativo;Data;Hora;Abertura;Máximo;Mínimo;Fechamento;Volume;Quantidade\nWINFUT;30/12/2024;18:20:00;NOT_A_NUMBER";
+        let tmp_file = create_dummy_csv(csv_content);
+        let file_path = tmp_file.path().to_str().unwrap().to_string();
+
+        let request = Request::new(LoadCsvRequest {
+            file_path: file_path.clone(),
+            symbol: "WINFUT".to_string(),
+        });
+
+        let result = engine.load_csv_data(request).await;
+        assert!(result.is_err());
+        let status = result.err().unwrap();
+        assert_eq!(status.code(), tonic::Code::Internal);
+        assert!(status.message().contains("Failed to parse CSV"));
+        // The error from csv_parser for missing fields is specific.
+        assert!(status.message().contains("Missing 'Máximo' field"));
+    }
+
+    // Note: Testing the "Error storing candles" case is harder without deeper mocking
+    // of MarketDataStore or making its error conditions easily triggerable.
+    // For now, the success and parsing error cases provide good coverage for the RPC endpoint logic itself.
 }

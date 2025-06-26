@@ -46,6 +46,7 @@ pub mod brazilian_format {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use chrono::{Datelike, Timelike}; // For year(), month(), day(), hour(), etc.
 
         #[test]
         fn test_parse_decimal_simple() {

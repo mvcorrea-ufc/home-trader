@@ -3,6 +3,10 @@ pub mod ema;
 pub mod rsi;
 pub mod sma;
 
+pub use ema::Ema;
+pub use rsi::Rsi;
+pub use sma::Sma;
+
 use shared::models::Candle;
 use serde_json::Value;
 

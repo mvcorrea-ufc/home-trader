@@ -20,7 +20,7 @@ pub struct MarketData {
     pub timeframe: TimeFrame,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum TimeFrame {
     Minute1,
     Minute5,

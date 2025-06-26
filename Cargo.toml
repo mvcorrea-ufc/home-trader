@@ -1,5 +1,6 @@
 [workspace]
 members = ["engine", "gui", "shared"]
+resolver = "2"
 
 [workspace.dependencies]
 # Async runtime
@@ -31,16 +32,9 @@ dioxus = "0.5"
 dioxus-desktop = "0.5"
 # dioxus-web = "0.5" # For future WebAssembly support, can be added when needed
 
+# Tokio stream utilities
+tokio-stream = "0.1"
+
 # Main binary dependencies (if any, besides being a workspace root)
 # For now, home-trader is just a workspace container.
 # If it were to have its own logic, its dependencies would go under a [dependencies] section, not [workspace.dependencies]
-[package]
-name = "home-trader"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-# Add any specific dependencies for the main home-trader binary here, if it becomes more than just a launcher/container.
-# For now, it's likely empty as per the plan focusing on the workspace members.

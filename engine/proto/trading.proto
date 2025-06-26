@@ -61,7 +61,7 @@ message TradeRequest {
     string symbol = 1;
     string action = 2; // e.g., "BUY", "SELL"
     double quantity = 3;
-    double price = 4; // Optional: for limit orders
+    optional double price = 4; // Optional: for limit orders
     string order_type = 5; // e.g., "MARKET", "LIMIT"
 }
 
