@@ -1,0 +1,3 @@
+# Placeholder to keep the integration test directory in Git.
+# Actual integration tests will be added here.
+# Example: engine_gui_interaction_test.rs

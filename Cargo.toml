@@ -1,0 +1,46 @@
+[workspace]
+members = ["engine", "gui", "shared"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# gRPC
+tonic = "0.11"
+prost = "0.12"
+tonic-build = { version = "0.11", default-features = false, features = ["prost"] } # Added default-features = false and features = ["prost"] as tonic-build often requires this for workspace usage.
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Data processing
+csv = "1.3"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# GUI Framework (Dioxus)
+dioxus = "0.5"
+dioxus-desktop = "0.5"
+# dioxus-web = "0.5" # For future WebAssembly support, can be added when needed
+
+# Main binary dependencies (if any, besides being a workspace root)
+# For now, home-trader is just a workspace container.
+# If it were to have its own logic, its dependencies would go under a [dependencies] section, not [workspace.dependencies]
+[package]
+name = "home-trader"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# Add any specific dependencies for the main home-trader binary here, if it becomes more than just a launcher/container.
+# For now, it's likely empty as per the plan focusing on the workspace members.

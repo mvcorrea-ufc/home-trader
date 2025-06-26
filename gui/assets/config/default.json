@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "app": {
+    "theme": "dark",
+    "language": "pt-BR",
+    "auto_save": true,
+    "auto_save_interval": 300
+  },
+  "engine": {
+    "host": "localhost",
+    "port": 50051
+  },
+  "chart": {
+    "type": "candlestick",
+    "candle": {
+      "bullish_color": "#26a69a",
+      "bearish_color": "#ef5350",
+      "border_width": 1,
+      "wick_width": 1
+    },
+    "background": "#1e1e1e",
+    "grid": {
+      "color": "#333333",
+      "enabled": true,
+      "style": "dashed"
+    },
+    "crosshair": {
+      "enabled": true,
+      "color": "#888888",
+      "style": "solid"
+    },
+    "time_scale": {
+      "visible": true,
+      "color": "#d1d4dc",
+      "border_color": "#485c7b"
+    },
+    "price_scale": {
+      "visible": true,
+      "color": "#d1d4dc",
+      "border_color": "#485c7b",
+      "mode": "normal"
+    }
+  },
+  "indicators": {
+    "sma": {
+      "enabled": true,
+      "periods": [20, 50, 200],
+      "colors": ["#2196F3", "#FF9800", "#4CAF50"],
+      "line_width": 2
+    },
+    "ema": {
+      "enabled": true,
+      "periods": [9, 21],
+      "colors": ["#E91E63", "#9C27B0"],
+      "line_width": 2
+    },
+    "rsi": {
+      "enabled": false,
+      "period": 14,
+      "overbought": 70,
+      "oversold": 30,
+      "color": "#FF5722"
+    }
+  },
+  "data": {
+    "csv_delimiter": ";",
+    "decimal_separator": ",",
+    "thousand_separator": ".",
+    "date_format": "%d/%m/%Y",
+    "time_format": "%H:%M:%S"
+  },
+  "shortcuts": {
+    "command_palette": "Ctrl+P",
+    "load_csv": "Ctrl+O",
+    "save_project": "Ctrl+S",
+    "exit": "Ctrl+Q",
+    "zoom_in": "Ctrl++",
+    "zoom_out": "Ctrl+-",
+    "reset_zoom": "Ctrl+0"
+  }
+}

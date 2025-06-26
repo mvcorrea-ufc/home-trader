@@ -1,0 +1,10 @@
+[package]
+name = "shared"
+version = "0.1.0"
+edition = "2021" # Aligning with common practice and other generated Cargo.toml files.
+
+[dependencies]
+chrono = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true } # For Indicator::parameters
+anyhow = { workspace = true } # For brazilian_format in utils.rs, if moved here

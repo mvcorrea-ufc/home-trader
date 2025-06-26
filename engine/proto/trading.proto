@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package trading;
+
+service TradingEngine {
+    rpc LoadCsvData(LoadCsvRequest) returns (LoadCsvResponse);
+    rpc GetMarketData(MarketDataRequest) returns (stream MarketDataResponse);
+    rpc CalculateIndicator(IndicatorRequest) returns (IndicatorResponse);
+    rpc SimulateTrade(TradeRequest) returns (TradeResponse);
+}
+
+message LoadCsvRequest {
+    string file_path = 1;
+    string symbol = 2;
+}
+
+message LoadCsvResponse {
+    bool success = 1;
+    string message = 2;
+    int32 candles_loaded = 3;
+}
+
+message MarketDataRequest {
+    string symbol = 1;
+    int64 from_timestamp = 2;
+    int64 to_timestamp = 3;
+}
+
+message MarketDataResponse {
+    repeated Candle candles = 1;
+}
+
+message Candle {
+    string symbol = 1;
+    int64 timestamp = 2;
+    double open = 3;
+    double high = 4;
+    double low = 5;
+    double close = 6;
+    double volume = 7;
+    int32 trades = 8;
+}
+
+message IndicatorRequest {
+    string symbol = 1;
+    string indicator_type = 2;
+    string parameters = 3; // JSON string
+}
+
+message IndicatorResponse {
+    string indicator_name = 1;
+    repeated double values = 2;
+}
+
+// Missing TradeRequest and TradeResponse from the spec, adding them.
+// Assuming they were omitted by mistake from the .proto snippet in the spec.
+// If these are not needed, they can be removed.
+// Based on `rpc SimulateTrade(TradeRequest) returns (TradeResponse);`
+
+message TradeRequest {
+    string symbol = 1;
+    string action = 2; // e.g., "BUY", "SELL"
+    double quantity = 3;
+    double price = 4; // Optional: for limit orders
+    string order_type = 5; // e.g., "MARKET", "LIMIT"
+}
+
+message TradeResponse {
+    bool success = 1;
+    string message = 2;
+    string order_id = 3;
+    double filled_price = 4;
+    double filled_quantity = 5;
+}

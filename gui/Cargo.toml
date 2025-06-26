@@ -1,0 +1,45 @@
+[package]
+name = "gui"
+version = "0.1.0"
+edition = "2021" # Aligning with common practice
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# Dioxus GUI Framework
+dioxus = { workspace = true, version = "0.5" } # Inherit from workspace if defined there, or specify version
+dioxus-desktop = { workspace = true, version = "0.5" } # For desktop applications
+
+# Workspace inherited dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true } # For data/time in UI if needed directly
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true } # For initializing in main.rs
+tokio = { workspace = true } # Dioxus desktop might require tokio runtime features, also for async tasks like gRPC calls
+
+# gRPC / Tonic (for engine client)
+tonic = { workspace = true }
+prost = { workspace = true }
+
+# Shared library for data models
+shared = { path = "../shared" }
+
+# Potentially, if GUI needs to generate its own client stubs from .proto
+# This would require moving .proto to a shared location or duplicating it.
+# For now, assuming client types might be exposed by `engine` or handled differently.
+# tonic-build = { workspace = true, optional = true } # As a build-dependency if GUI builds protos
+
+# Fuzzy matcher for command palette (as per spec example)
+fuzzy-matcher = "0.3.7" # Spec showed CommandPalette using this
+
+[build-dependencies]
+# If GUI needs to compile its own protobuf client:
+# tonic-build = { workspace = true }
+
+# Note on Dioxus version: The spec mentioned "0.5". If workspace.dependencies has a different
+# version for Dioxus, this `version = "0.5"` here will be overridden by the workspace version
+# if `dioxus = { workspace = true }` is used without a version specifier here.
+# It's generally better to manage versions in the workspace root Cargo.toml.
+# For now, I'll add Dioxus to the workspace dependencies as well.
