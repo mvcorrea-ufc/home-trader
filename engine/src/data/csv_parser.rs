@@ -163,7 +163,6 @@ impl BrazilianCsvParser {
             None => {
                 // This could be an error if the field is mandatory by name
                 // For now, returning None to indicate it wasn't found by name
-                // Consider logging a warning here if a named header is expected but not found.
                 // Err(anyhow!("Header '{}' not found", name))
                 Ok(None) // Or handle specific column indices as fallback if header name is not critical
             }
