@@ -10,7 +10,7 @@ use crate::data::market_data::MarketDataStore;
 use crate::indicators::{IndicatorCalculator, Sma, Ema, Rsi}; // Assuming these are the indicator types for now
 use shared::models::{Candle as DomainCandle, TimeFrame}; // Domain Candle
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Response, Status, Streaming};
+use tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
 use std::sync::Arc;
 use tokio::sync::RwLock; // Using tokio's RwLock for async safety
@@ -98,7 +98,7 @@ impl TradingEngine for MyTradingEngine {
         let store = self.market_data_store.read().await;
         let candles = store.get_candles(&req.symbol, timeframe, Some(from_ts), Some(to_ts));
 
-        let (mut tx, rx) = mpsc::channel(4); // Buffer size for the stream
+        let (tx, rx) = mpsc::channel(4); // Buffer size for the stream
 
         tokio::spawn(async move {
             if let Some(domain_candles) = candles {

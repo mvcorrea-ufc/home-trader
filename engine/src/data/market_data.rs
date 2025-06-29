@@ -1,5 +1,5 @@
 // Manages market data, including candles and potentially other data types
-use shared::models::{Candle, MarketData, TimeFrame};
+use shared::models::{Candle, TimeFrame};
 use std::collections::HashMap;
 use anyhow::Result;
 

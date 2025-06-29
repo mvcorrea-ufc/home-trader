@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use csv::{ReaderBuilder, StringRecord};
 use shared::models::Candle; // Using the Candle model from the shared crate
 use std::fs::File;
