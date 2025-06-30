@@ -10,11 +10,6 @@ pub struct Rsi {
 
 impl Rsi {
     pub fn new(period: usize) -> Self {
-        Self {
-            name: format!("RSI({})", period),
-            period,
-        }
-    pub fn new(period: usize) -> Self {
         if period == 0 {
             panic!("RSI period must be greater than 0");
         }

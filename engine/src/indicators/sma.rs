@@ -10,11 +10,6 @@ pub struct Sma {
 
 impl Sma {
     pub fn new(period: usize) -> Self {
-        Self {
-            name: format!("SMA({})", period),
-            period,
-        }
-    pub fn new(period: usize) -> Self {
         if period == 0 {
             // Or return Result<Self, Error>
             panic!("SMA period must be greater than 0");
