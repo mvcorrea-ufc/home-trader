@@ -1,7 +1,7 @@
 // Engine settings, loaded from a config file or environment variables
 use serde::Deserialize;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path; // Removed PathBuf
 use anyhow::{Context, Result}; // Ensure anyhow is in Cargo.toml for engine
 use tracing::warn;
 

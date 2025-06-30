@@ -369,7 +369,7 @@ mod tests {
     use tonic::Request;
     use tempfile::NamedTempFile;
     use std::io::Write;
-    use chrono::{Utc, TimeZone};
+    use chrono::Utc; // Removed TimeZone
 
     // Helper to create a MyTradingEngine instance with a fresh MarketDataStore
     fn create_test_engine() -> MyTradingEngine {
@@ -377,9 +377,9 @@ mod tests {
         MyTradingEngine::new(market_data_store)
     }
 
-    fn create_test_engine_with_candle(symbol: &str, candle: DomainCandle) -> MyTradingEngine {
+    async fn create_test_engine_with_candle(symbol: &str, candle: DomainCandle) -> MyTradingEngine {
         let engine = create_test_engine();
-        let mut store = engine.market_data_store.blocking_write();
+        let mut store = engine.market_data_store.write().await; // Use async write
         store.add_candles(symbol, TimeFrame::Day1, vec![candle]).unwrap();
         drop(store);
         engine
@@ -454,12 +454,34 @@ mod tests {
         let result = engine.load_csv_data(request).await;
         assert!(result.is_err());
         let status = result.err().unwrap();
-        // Expected: CsvDataFormatError -> tonic::Code::InvalidArgument
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
-        assert!(status.message().contains("CSV data format error"));
-        assert!(status.message().contains("Error parsing 'Abertura'"));
+        // This CSV has unequal lengths, so it's a CsvSystemError (from csv::Error::UnequalLengths)
+        assert_eq!(status.code(), tonic::Code::InvalidArgument); // CsvSystemError maps to InvalidArgument
+        assert!(status.message().contains("CSV parsing system error")); // Check for the correct error type string
+        assert!(status.message().contains("has 4 fields, but the header has 9")); // Specific message part
     }
 
+    #[tokio::test]
+    async fn test_load_csv_data_bad_data_format_correct_columns() {
+        let engine = create_test_engine();
+        // Correct number of columns, but 'Abertura' is not a valid number.
+        let csv_content = "Ativo;Data;Hora;Abertura;Máximo;Mínimo;Fechamento;Volume;Quantidade\nWINFUT;30/12/2024;18:20:00;NOT_A_NUMBER;124.090;123.938;123.983;600.822.115,84;24.228";
+        let tmp_file = create_dummy_csv(csv_content);
+        let file_path = tmp_file.path().to_str().unwrap().to_string();
+
+        let request = Request::new(LoadCsvRequest {
+            file_path: file_path.clone(),
+            symbol: "WINFUT".to_string(),
+        });
+
+        let result = engine.load_csv_data(request).await;
+        assert!(result.is_err());
+        let status = result.err().unwrap();
+        // Expected: CsvDataFormatError -> tonic::Code::InvalidArgument
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status.message().contains("CSV data format error")); // General part from EngineError -> Status
+        assert!(status.message().contains("Error parsing 'Abertura'")); // Specific part from CsvDataFormatError
+        assert!(status.message().contains("Failed to parse decimal 'NOT_A_NUMBER'")); // Detail from brazilian_format
+    }
 
     #[tokio::test]
     async fn test_simulate_trade_no_market_data() {
@@ -492,7 +514,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulate_trade_market_buy() {
         let candle = sample_candle("TEST", 100.0, 102.0, 98.0, 101.0);
-        let engine = create_test_engine_with_candle("TEST", candle.clone());
+        let engine = create_test_engine_with_candle("TEST", candle.clone()).await;
 
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
@@ -511,7 +533,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulate_trade_limit_buy_fill() {
         let candle = sample_candle("TEST", 100.0, 102.0, 98.0, 101.0);
-        let engine = create_test_engine_with_candle("TEST", candle.clone());
+        let engine = create_test_engine_with_candle("TEST", candle.clone()).await;
         let limit_price = 99.0;
 
         let request = Request::new(TradeRequest {
@@ -530,7 +552,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulate_trade_limit_buy_no_fill() {
         let candle = sample_candle("TEST", 100.0, 102.0, 99.0, 101.0);
-        let engine = create_test_engine_with_candle("TEST", candle.clone());
+        let engine = create_test_engine_with_candle("TEST", candle.clone()).await;
         let limit_price = 98.0;
 
         let request = Request::new(TradeRequest {
@@ -548,7 +570,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulate_trade_limit_sell_fill() {
         let candle = sample_candle("TEST", 100.0, 102.0, 98.0, 101.0);
-        let engine = create_test_engine_with_candle("TEST", candle.clone());
+        let engine = create_test_engine_with_candle("TEST", candle.clone()).await;
         let limit_price = 101.5;
 
         let request = Request::new(TradeRequest {
@@ -567,7 +589,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulate_trade_limit_sell_no_fill() {
         let candle = sample_candle("TEST", 100.0, 101.0, 98.0, 100.5);
-        let engine = create_test_engine_with_candle("TEST", candle.clone());
+        let engine = create_test_engine_with_candle("TEST", candle.clone()).await;
         let limit_price = 101.5;
 
         let request = Request::new(TradeRequest {
@@ -594,7 +616,7 @@ mod tests {
         });
         let response = engine.simulate_trade(request).await.unwrap().into_inner();
         assert!(!response.success);
-        assert!(response.message.contains("Limit price is required"));
+        assert!(response.message.contains("Limit price is required for LIMIT orders."));
     }
 
     #[tokio::test]
@@ -615,7 +637,7 @@ mod tests {
     #[tokio::test]
     async fn test_simulate_trade_limit_unknown_action() {
         let candle = sample_candle("TEST", 100.0, 102.0, 98.0, 101.0);
-        let engine = create_test_engine_with_candle("TEST", candle.clone());
+        let engine = create_test_engine_with_candle("TEST", candle.clone()).await;
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
             action: "HOLD".to_string(),

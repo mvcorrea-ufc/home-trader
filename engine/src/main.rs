@@ -1,5 +1,5 @@
 // Engine main entry point
-use engine::config::settings::EngineSettings; // Assuming engine is the crate name
+// use engine::config::settings::EngineSettings; // No longer needed directly
 use engine::services::trading_service::MyTradingEngine;
 use engine::services::TradingEngineServer; // Import the generated server type
 use engine::data::market_data::MarketDataStore;

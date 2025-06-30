@@ -10,7 +10,7 @@ pub mod brazilian_format {
     use std::str::FromStr;
     // Using anyhow::Error for internal error propagation within this module, then map to EngineError if needed.
     // Or directly use EngineError if preferred. For now, keeping anyhow for internal detailed errors.
-    use anyhow::{anyhow, Result};
+    use anyhow::Result; // Removed unused 'anyhow' macro import
     use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 
     // Parses decimals like "1.234,56" or "123,45" into f64

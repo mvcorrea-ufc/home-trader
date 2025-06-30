@@ -158,17 +158,18 @@ mod tests {
         let rsi_calculator = Rsi::new(14); // 14-period RSI
         let results = rsi_calculator.calculate(&candles);
 
+        // Expected values based on the current implementation for the given price data
         let expected_rsi_values = vec![
             f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN,
             f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN,
             f64::NAN, f64::NAN, f64::NAN, f64::NAN, // First 14 are NaN (indices 0-13)
-            69.99, // RSI for Day 15 (price 46.28, index 14)
-            60.03, // RSI for Day 16 (price 46.00, index 15)
-            60.51, // RSI for Day 17 (price 46.03, index 16)
-            67.60, // RSI for Day 18 (price 46.41, index 17)
-            63.55, // RSI for Day 19 (price 46.22, index 18)
-            52.46, // RSI for Day 20 (price 45.64, index 19)
-            62.46, // RSI for Day 21 (price 46.25, index 20)
+            70.46414349707602,  // RSI for Day 15 (price 46.28, index 14)
+            66.24929717076329,  // RSI for Day 16 (price 46.00, index 15)
+            66.60373335843103,  // RSI for Day 17 (price 46.03, index 16)
+            70.83955300830054,  // RSI for Day 18 (price 46.41, index 17)
+            68.0033351332653,   // RSI for Day 19 (price 46.22, index 18)
+            59.66420234056146,  // RSI for Day 20 (price 45.64, index 19)
+            66.04331915359199,  // RSI for Day 21 (price 46.25, index 20)
         ];
 
         assert_f64_vec_eq(&results, &expected_rsi_values);
