@@ -15,6 +15,7 @@ use tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
 use std::sync::Arc;
 use tokio::sync::RwLock; // Using tokio's RwLock for async safety
+use uuid::Uuid; // Added for order ID generation
 
 // Helper function to convert domain Candle to gRPC Candle
 fn to_grpc_candle(domain_candle: &DomainCandle) -> GrpcCandle {
@@ -36,12 +37,8 @@ fn from_grpc_timestamp(ts_millis: i64) -> Result<chrono::DateTime<chrono::Utc>, 
         .ok_or_else(|| EngineError::ProcessingError(format!("Invalid gRPC timestamp: {}", ts_millis)))
 }
 
-
 pub struct MyTradingEngine {
-    // Example: Store market data in memory. In a real app, this might be a database connection.
-    // Arc<RwLock<...>> is used for shared mutable state in an async context.
     market_data_store: Arc<RwLock<MarketDataStore>>,
-    // Potentially channels for multi-threaded processing as per spec, to be integrated later.
 }
 
 impl MyTradingEngine {
@@ -60,24 +57,19 @@ impl TradingEngine for MyTradingEngine {
             "Received LoadCsvRequest"
         );
 
-        // For now, using a placeholder TimeFrame. This should ideally come from request or config.
-        let timeframe = TimeFrame::Day1; // Example, make this configurable or part of request
+        let timeframe = TimeFrame::Day1;
 
-        // BrazilianCsvParser::load_candles_from_csv now returns Result<_, EngineError>
         let candles = match BrazilianCsvParser::load_candles_from_csv(&req.file_path, &req.symbol) {
             Ok(c) => c,
-            Err(e) => { // e is EngineError
-                // Specific context logged here, EngineError itself is logged when converted to Status
+            Err(e) => {
                 tracing::error!(symbol = %req.symbol, path = %req.file_path, error_detail = ?e, "Failed during CSV loading process");
-                return Err(e.into()); // Converts EngineError to tonic::Status
+                return Err(e.into());
             }
         };
 
         let candles_loaded = candles.len() as i32;
         let mut store = self.market_data_store.write().await;
 
-        // Assuming MarketDataStore::add_candles might return its own error type, e.g., Result<(), MarketDataError>
-        // For now, let's assume it returns anyhow::Result<()> which can be mapped to EngineError
         match store.add_candles(&req.symbol, timeframe, candles) {
             Ok(_) => {
                 tracing::info!(symbol = %req.symbol, count = candles_loaded, "Successfully loaded and stored CSV data");
@@ -87,9 +79,8 @@ impl TradingEngine for MyTradingEngine {
                     candles_loaded,
                 }))
             }
-            Err(e) => { // e is anyhow::Error from MarketDataStore::add_candles
+            Err(e) => {
                 tracing::error!(symbol = %req.symbol, error_detail = ?e, "Error storing candles");
-                // Convert anyhow::Error directly to EngineError::AnyhowError then to Status
                 Err(EngineError::from(e).into())
             }
         }
@@ -106,22 +97,21 @@ impl TradingEngine for MyTradingEngine {
             "Received GetMarketDataRequest"
         );
 
-        // For now, using a placeholder TimeFrame. This should ideally come from request or config.
-        let timeframe = TimeFrame::Day1; // Example
+        let timeframe = TimeFrame::Day1;
 
         let from_ts = match from_grpc_timestamp(req.from_timestamp) {
             Ok(ts) => ts,
-            Err(e) => return Err(e.into()), // Convert EngineError to tonic::Status
+            Err(e) => return Err(e.into()),
         };
         let to_ts = match from_grpc_timestamp(req.to_timestamp) {
             Ok(ts) => ts,
-            Err(e) => return Err(e.into()), // Convert EngineError to tonic::Status
+            Err(e) => return Err(e.into()),
         };
 
         let store = self.market_data_store.read().await;
         let candles = store.get_candles(&req.symbol, timeframe, Some(from_ts), Some(to_ts));
 
-        let (tx, rx) = mpsc::channel(4); // Buffer size for the stream
+        let (tx, rx) = mpsc::channel(4);
 
         tokio::spawn(async move {
             if let Some(domain_candles) = candles {
@@ -139,14 +129,13 @@ impl TradingEngine for MyTradingEngine {
                 if let Err(e) = tx.send(Ok(response)).await {
                     tracing::error!(error = ?e, "Failed to send market data to stream");
                 }
-            } else { // This means store.get_candles(&req.symbol, ...) returned None
+            } else {
                 tracing::warn!(symbol = %req.symbol, ?timeframe, "No market data available (symbol/timeframe not found in store).");
-                // Send a NotFound status over the channel
                 let status = Status::not_found(format!(
                     "Market data not found for symbol '{}' and timeframe {:?}",
                     req.symbol, timeframe
                 ));
-                if let Err(e) = tx.send(Err(status)).await { // status is already Status::not_found
+                if let Err(e) = tx.send(Err(status)).await {
                     tracing::error!(error = ?e, "Failed to send NotFound status to stream");
                 }
             }
@@ -160,13 +149,13 @@ impl TradingEngine for MyTradingEngine {
         tracing::info!(
             symbol = %req.symbol,
             indicator_type = %req.indicator_type,
-            parameters = %req.parameters, // Display formatting for JSON string is fine
+            parameters = %req.parameters,
             "Received CalculateIndicatorRequest"
         );
 
+        let timeframe = TimeFrame::Day1;
         let store = self.market_data_store.read().await;
-        // Assuming Day1 timeframe for now, this should be more dynamic
-        let candles = store.get_candles(&req.symbol, TimeFrame::Day1, None, None);
+        let candles = store.get_candles(&req.symbol, timeframe, None, None);
 
         if candles.is_none() || candles.as_ref().unwrap().is_empty() {
             tracing::warn!(
@@ -191,15 +180,10 @@ impl TradingEngine for MyTradingEngine {
             }
         };
 
-        // TODO: Indicator instantiation might itself return a Result<_, EngineError> if period is invalid (e.g. 0)
-        // Currently, Sma::new, etc. panic on period=0. This will turn into a 500 error.
-        // A more graceful way would be for new() to return Result and map that to EngineError::IndicatorError.
-        // For now, relying on the panic being caught by Tonic.
         let indicator_calculator: Box<dyn IndicatorCalculator> = match req.indicator_type.to_lowercase().as_str() {
             "sma" => {
-                // Parameter parsing could also return EngineError
                 let period = params.get("period").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
-                if period == 0 { // Defend against panic if new() doesn't (though ours do now)
+                if period == 0 {
                     return Err(EngineError::IndicatorError("Indicator period cannot be 0".to_string()).into());
                 }
                 Box::new(Sma::new(period))
@@ -225,25 +209,12 @@ impl TradingEngine for MyTradingEngine {
         };
 
         let values = indicator_calculator.calculate(&candle_data);
-        // The `calculate` method now returns Vec<f64> with f64::NAN for undefined values.
-        // These NaN values will be serialized as "NaN" in JSON if this response were JSON,
-        // or handled as per protobuf spec for double (which supports NaN).
 
         Ok(Response::new(IndicatorResponse {
             indicator_name: indicator_calculator.name().to_string(),
             values,
         }))
     }
-
-use uuid::Uuid; // Added for order ID generation
-
-// ... (existing imports)
-
-// ... (MyTradingEngine struct and new method) ...
-
-#[tonic::async_trait]
-impl TradingEngine for MyTradingEngine {
-    // ... (load_csv_data, get_market_data, calculate_indicator methods) ...
 
     async fn simulate_trade(&self, request: Request<TradeRequest>) -> Result<Response<TradeResponse>, Status> {
         let req = request.into_inner();
@@ -252,15 +223,14 @@ impl TradingEngine for MyTradingEngine {
             action = %req.action,
             quantity = req.quantity,
             order_type = %req.order_type,
-            price = ?req.price, // Debug format for Option<f64>
+            price = ?req.price,
             "Received SimulateTradeRequest"
         );
 
         let order_id = Uuid::new_v4().to_string();
-        let timeframe = TimeFrame::Day1; // Placeholder, consistent with other methods
+        let timeframe = TimeFrame::Day1;
 
         let store = self.market_data_store.read().await;
-        // Fetch all candles to get the latest one. Could be optimized if store supports getting latest directly.
         let candles_opt = store.get_candles(&req.symbol, timeframe, None, None);
 
         if candles_opt.is_none() || candles_opt.as_ref().unwrap().is_empty() {
@@ -275,18 +245,15 @@ impl TradingEngine for MyTradingEngine {
         }
 
         let candles = candles_opt.unwrap();
-        // Get the latest candle
-        // .last() returns an Option, so we handle the case where it might be None (though prior checks make it unlikely)
         let latest_candle = match candles.last() {
-            Some(c) => c.clone(), // Clone to work with it after dropping the read lock from store
-            None => { // Should ideally not be reached if candles_opt.as_ref().unwrap().is_empty() was false
+            Some(c) => c.clone(),
+            None => {
                 let err_msg = format!("Logic error: candles list was non-empty for symbol '{}' but last() is None.", req.symbol);
-                tracing::error!("{}", err_msg);
+                tracing::error!("{}", err_msg); // Log the specific error message
                 return Err(EngineError::MarketDataError(err_msg).into());
             }
         };
 
-        // Drop the read lock on the store as soon as candle data is retrieved and copied
         drop(store);
 
         let mut filled_price = 0.0;
@@ -295,7 +262,7 @@ impl TradingEngine for MyTradingEngine {
 
         match req.order_type.to_uppercase().as_str() {
             "MARKET" => {
-                filled_price = latest_candle.close; // Market order fills at last known close price
+                filled_price = latest_candle.close;
                 success = true;
                 message = format!(
                     "Market {} order for {} of {} simulated at {:.2}",
@@ -318,8 +285,6 @@ impl TradingEngine for MyTradingEngine {
 
                 match req.action.to_uppercase().as_str() {
                     "BUY" => {
-                        // Buy limit: fill if market price (latest_candle.low) went to or below your limit_price.
-                        // Fill at your limit_price (or better, but simulation keeps it simple at limit_price).
                         if latest_candle.low <= limit_price {
                             filled_price = limit_price;
                             success = true;
@@ -335,8 +300,6 @@ impl TradingEngine for MyTradingEngine {
                         }
                     }
                     "SELL" => {
-                        // Sell limit: fill if market price (latest_candle.high) went to or above your limit_price.
-                        // Fill at your limit_price.
                         if latest_candle.high >= limit_price {
                             filled_price = limit_price;
                             success = true;
@@ -368,15 +331,15 @@ impl TradingEngine for MyTradingEngine {
                 action = %req.action,
                 order_type = %req.order_type,
                 quantity = req.quantity,
-                filled_price, // This is f64, directly usable
+                filled_price,
                 "Trade simulated successfully"
             );
             Ok(Response::new(TradeResponse {
                 success: true,
-                message, // This message already contains details
+                message,
                 order_id,
                 filled_price,
-                filled_quantity: req.quantity, // Assuming full quantity filled if successful
+                filled_quantity: req.quantity,
             }))
         } else {
             tracing::warn!(
@@ -384,19 +347,19 @@ impl TradingEngine for MyTradingEngine {
                 symbol = %req.symbol,
                 action = %req.action,
                 order_type = %req.order_type,
-                stale_message = %message, // Renamed to avoid conflict if message was a field name
+                stale_message = %message,
                 "Trade simulation failed"
             );
             Ok(Response::new(TradeResponse {
                 success: false,
-                message, // This message already contains details of why it failed
+                message,
                 order_id,
                 filled_price: 0.0,
                 filled_quantity: 0.0,
             }))
         }
     }
-}
+} // This is the single, correct closing brace for impl TradingEngine
 
 #[cfg(test)]
 mod tests {
@@ -416,18 +379,16 @@ mod tests {
 
     fn create_test_engine_with_candle(symbol: &str, candle: DomainCandle) -> MyTradingEngine {
         let engine = create_test_engine();
-        let mut store = engine.market_data_store.blocking_write(); // Use blocking_write for test setup ease
+        let mut store = engine.market_data_store.blocking_write();
         store.add_candles(symbol, TimeFrame::Day1, vec![candle]).unwrap();
         drop(store);
         engine
     }
 
-
-    // Helper to create a dummy CSV file
     fn create_dummy_csv(content: &str) -> NamedTempFile {
         let mut file = NamedTempFile::new().unwrap();
         writeln!(file, "{}", content).unwrap();
-        file.flush().unwrap(); // Ensure content is written to disk
+        file.flush().unwrap();
         file
     }
 
@@ -449,7 +410,6 @@ mod tests {
         assert_eq!(response.candles_loaded, 1);
         assert!(response.message.contains("Loaded 1 candles"));
 
-        // Verify data in store
         let store = engine.market_data_store.read().await;
         let candles_in_store = store.get_candles("WINFUT", TimeFrame::Day1, None, None);
         assert!(candles_in_store.is_some());
@@ -467,16 +427,21 @@ mod tests {
         let result = engine.load_csv_data(request).await;
         assert!(result.is_err());
         let status = result.err().unwrap();
+        // Check for the specific EngineError variant if possible, or message content
+        // Expected: IoError -> tonic::Code::Internal
         assert_eq!(status.code(), tonic::Code::Internal);
-        assert!(status.message().contains("Failed to parse CSV"));
-        assert!(status.message().contains("Failed to open CSV file"));
+        assert!(status.message().contains("I/O error")); // From EngineError -> Status mapping
+        // The specific file not found message from OS will be in the {} part of "I/O error: {}"
+        // This part of the original test was:
+        // assert!(status.message().contains("Failed to parse CSV")); // This outer message is gone
+        // assert!(status.message().contains("Failed to open CSV file")); // This specific part is now part of the I/O error
+        // So we check for "I/O error" and part of the OS message like "No such file" or similar.
+        // As the OS message is platform-dependent, checking for "I/O error" is more robust here.
     }
 
     #[tokio::test]
     async fn test_load_csv_data_parsing_error_bad_content() {
         let engine = create_test_engine();
-        // Malformed data: "NOT_A_NUMBER" for Abertura, and also missing columns compared to header.
-        // The parser will likely fail on "Missing 'Máximo' field" first due to column count mismatch after header.
         let csv_content = "Ativo;Data;Hora;Abertura;Máximo;Mínimo;Fechamento;Volume;Quantidade\nWINFUT;30/12/2024;18:20:00;NOT_A_NUMBER";
         let tmp_file = create_dummy_csv(csv_content);
         let file_path = tmp_file.path().to_str().unwrap().to_string();
@@ -489,15 +454,12 @@ mod tests {
         let result = engine.load_csv_data(request).await;
         assert!(result.is_err());
         let status = result.err().unwrap();
-        assert_eq!(status.code(), tonic::Code::Internal);
-        assert!(status.message().contains("Failed to parse CSV"));
-        // The error from csv_parser for missing fields is specific.
-        assert!(status.message().contains("Missing 'Máximo' field"));
+        // Expected: CsvDataFormatError -> tonic::Code::InvalidArgument
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status.message().contains("CSV data format error"));
+        assert!(status.message().contains("Error parsing 'Abertura'"));
     }
 
-    // Note: Testing the "Error storing candles" case is harder without deeper mocking
-    // of MarketDataStore or making its error conditions easily triggerable.
-    // For now, the success and parsing error cases provide good coverage for the RPC endpoint logic itself.
 
     #[tokio::test]
     async fn test_simulate_trade_no_market_data() {
@@ -517,7 +479,7 @@ mod tests {
     fn sample_candle(symbol: &str, open: f64, high: f64, low: f64, close: f64) -> DomainCandle {
         DomainCandle {
             symbol: symbol.to_string(),
-            timestamp: Utc::now(), // Exact timestamp isn't critical for this test logic
+            timestamp: Utc::now(),
             open,
             high,
             low,
@@ -548,9 +510,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_simulate_trade_limit_buy_fill() {
-        let candle = sample_candle("TEST", 100.0, 102.0, 98.0, 101.0); // Low is 98.0
+        let candle = sample_candle("TEST", 100.0, 102.0, 98.0, 101.0);
         let engine = create_test_engine_with_candle("TEST", candle.clone());
-        let limit_price = 99.0; // Buy if price drops to 99.0 or lower
+        let limit_price = 99.0;
 
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
@@ -567,9 +529,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_simulate_trade_limit_buy_no_fill() {
-        let candle = sample_candle("TEST", 100.0, 102.0, 99.0, 101.0); // Low is 99.0
+        let candle = sample_candle("TEST", 100.0, 102.0, 99.0, 101.0);
         let engine = create_test_engine_with_candle("TEST", candle.clone());
-        let limit_price = 98.0; // Buy if price drops to 98.0 or lower - won't happen
+        let limit_price = 98.0;
 
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
@@ -585,9 +547,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_simulate_trade_limit_sell_fill() {
-        let candle = sample_candle("TEST", 100.0, 102.0, 98.0, 101.0); // High is 102.0
+        let candle = sample_candle("TEST", 100.0, 102.0, 98.0, 101.0);
         let engine = create_test_engine_with_candle("TEST", candle.clone());
-        let limit_price = 101.5; // Sell if price rises to 101.5 or higher
+        let limit_price = 101.5;
 
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
@@ -604,9 +566,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_simulate_trade_limit_sell_no_fill() {
-        let candle = sample_candle("TEST", 100.0, 101.0, 98.0, 100.5); // High is 101.0
+        let candle = sample_candle("TEST", 100.0, 101.0, 98.0, 100.5);
         let engine = create_test_engine_with_candle("TEST", candle.clone());
-        let limit_price = 101.5; // Sell if price rises to 101.5 or higher - won't happen
+        let limit_price = 101.5;
 
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
@@ -622,12 +584,12 @@ mod tests {
 
      #[tokio::test]
     async fn test_simulate_trade_limit_no_price() {
-        let engine = create_test_engine(); // No data needed as it should fail before data check
+        let engine = create_test_engine();
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
             action: "BUY".to_string(),
             quantity: 1.0,
-            price: None, // Missing price for LIMIT order
+            price: None,
             order_type: "LIMIT".to_string(),
         });
         let response = engine.simulate_trade(request).await.unwrap().into_inner();
@@ -643,7 +605,7 @@ mod tests {
             action: "BUY".to_string(),
             quantity: 1.0,
             price: None,
-            order_type: "FOOBAZ".to_string(), // Unsupported
+            order_type: "FOOBAZ".to_string(),
         });
         let response = engine.simulate_trade(request).await.unwrap().into_inner();
         assert!(!response.success);
@@ -656,7 +618,7 @@ mod tests {
         let engine = create_test_engine_with_candle("TEST", candle.clone());
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
-            action: "HOLD".to_string(), // Unknown action
+            action: "HOLD".to_string(),
             quantity: 1.0,
             price: Some(100.0),
             order_type: "LIMIT".to_string(),
