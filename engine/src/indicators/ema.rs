@@ -10,11 +10,6 @@ pub struct Ema {
 
 impl Ema {
     pub fn new(period: usize) -> Self {
-        Self {
-            name: format!("EMA({})", period),
-            period,
-        }
-    pub fn new(period: usize) -> Self {
         if period == 0 {
             panic!("EMA period must be greater than 0");
         }
