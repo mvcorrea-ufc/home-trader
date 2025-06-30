@@ -24,6 +24,9 @@ shared = { path = "../shared" }
 # Tokio stream utilities
 tokio-stream = { workspace = true }
 
+# UUID generation
+uuid = { version = "1.7", features = ["v4"] }
+
 [build-dependencies]
 tonic-build = { workspace = true }
 

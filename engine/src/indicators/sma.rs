@@ -14,6 +14,15 @@ impl Sma {
             name: format!("SMA({})", period),
             period,
         }
+    pub fn new(period: usize) -> Self {
+        if period == 0 {
+            // Or return Result<Self, Error>
+            panic!("SMA period must be greater than 0");
+        }
+        Self {
+            name: format!("SMA({})", period),
+            period,
+        }
     }
 }
 
@@ -26,18 +35,24 @@ impl IndicatorCalculator for Sma {
         serde_json::json!({ "period": self.period })
     }
 
-    fn calculate(&self, data: &[Candle]) -> Vec<Option<f64>> {
+    fn calculate(&self, data: &[Candle]) -> Vec<f64> {
+        if self.period == 0 { // Should be caught by new()
+            return vec![f64::NAN; data.len()];
+        }
         if data.len() < self.period {
-            return vec![None; data.len()];
+            return vec![f64::NAN; data.len()];
         }
 
-        let mut results = vec![None; self.period -1]; // No SMA for initial period
-        let mut sum: f64 = data.iter().take(self.period).map(|c| c.close).sum();
-        results.push(Some(sum / self.period as f64));
+        let mut results = vec![f64::NAN; self.period - 1]; // No SMA for initial period
 
+        // Calculate sum for the first window
+        let mut sum: f64 = data.iter().take(self.period).map(|c| c.close).sum();
+        results.push(sum / self.period as f64);
+
+        // Slide the window
         for i in self.period..data.len() {
             sum = sum - data[i - self.period].close + data[i].close;
-            results.push(Some(sum / self.period as f64));
+            results.push(sum / self.period as f64);
         }
         results
     }
@@ -57,6 +72,18 @@ mod tests {
         }
     }
 
+    fn assert_f64_vec_eq(a: &[f64], b: &[f64]) {
+        assert_eq!(a.len(), b.len(), "Vectors differ in length");
+        for (i, (val_a, val_b)) in a.iter().zip(b.iter()).enumerate() {
+            if val_a.is_nan() && val_b.is_nan() {
+                // Both are NaN, consider them equal for this test
+            } else {
+                assert!((val_a - val_b).abs() < 1e-9, "Mismatch at index {}: {} != {}", i, val_a, val_b);
+            }
+        }
+    }
+
+
     #[test]
     fn test_sma_calculation() {
         let candles = vec![
@@ -65,7 +92,8 @@ mod tests {
         ];
         let sma = Sma::new(3);
         let results = sma.calculate(&candles);
-        assert_eq!(results, vec![None, None, Some(2.0), Some(3.0), Some(4.0)]);
+        // expected: NaN, NaN, (1+2+3)/3=2.0, (2+3+4)/3=3.0, (3+4+5)/3=4.0
+        assert_f64_vec_eq(&results, &[f64::NAN, f64::NAN, 2.0, 3.0, 4.0]);
     }
 
     #[test]
@@ -73,6 +101,31 @@ mod tests {
         let candles = vec![create_candle(1.0), create_candle(2.0)];
         let sma = Sma::new(3);
         let results = sma.calculate(&candles);
-        assert_eq!(results, vec![None, None]);
+        assert_f64_vec_eq(&results, &[f64::NAN, f64::NAN]);
+    }
+
+    #[test]
+    fn test_sma_period_one() {
+        let candles = vec![
+            create_candle(1.0), create_candle(2.0), create_candle(3.0),
+        ];
+        let sma = Sma::new(1);
+        let results = sma.calculate(&candles);
+        // SMA(1) is just the close price
+        assert_f64_vec_eq(&results, &[1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_sma_empty_data() {
+        let candles: Vec<Candle> = Vec::new();
+        let sma = Sma::new(3);
+        let results = sma.calculate(&candles);
+        assert_f64_vec_eq(&results, &[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "SMA period must be greater than 0")]
+    fn test_sma_period_zero_panic() {
+        Sma::new(0);
     }
 }

@@ -14,5 +14,5 @@ use serde_json::Value;
 pub trait IndicatorCalculator: Send + Sync {
     fn name(&self) -> &str;
     fn parameters(&self) -> Value; // Parameters used for this indicator instance
-    fn calculate(&self, data: &[Candle]) -> Vec<Option<f64>>; // Option<f64> to handle cases where indicator can't be calculated (e.g. insufficient data)
+    fn calculate(&self, data: &[Candle]) -> Vec<f64>; // Use f64::NAN for undefined values
 }

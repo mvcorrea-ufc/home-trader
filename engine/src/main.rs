@@ -16,10 +16,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting Home Trader Engine...");
 
-    // Load configuration (placeholder, replace with actual config loading)
-    let settings = EngineSettings::default();
+    // Load configuration using the new utility function
+    let settings = engine::config::settings::get_engine_settings(); // Use the new function
     let addr = format!("{}:{}", settings.host, settings.port).parse()?;
-    info!("Engine will listen on {}", addr);
+    info!("Engine will listen on {} (Host: {}, Port: {})", addr, settings.host, settings.port);
 
     // Initialize shared data stores or services
     let market_data_store = Arc::new(RwLock::new(MarketDataStore::new()));

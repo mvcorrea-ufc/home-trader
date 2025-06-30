@@ -1,41 +1,39 @@
-use anyhow::{anyhow, Result};
+use crate::error::EngineError; // Import EngineError
 use csv::{ReaderBuilder, StringRecord};
-use shared::models::Candle; // Using the Candle model from the shared crate
+use shared::models::Candle;
 use std::fs::File;
 use std::io::BufReader;
 
 // Module for Brazilian number and date/time format handling, as per spec section 7.1
 pub mod brazilian_format {
+    use crate::error::EngineError; // For returning CsvDataFormatError
     use std::str::FromStr;
-    use anyhow::{Result, anyhow};
+    // Using anyhow::Error for internal error propagation within this module, then map to EngineError if needed.
+    // Or directly use EngineError if preferred. For now, keeping anyhow for internal detailed errors.
+    use anyhow::{anyhow, Result};
     use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 
     // Parses decimals like "1.234,56" or "123,45" into f64
-    pub fn parse_decimal(s: &str) -> Result<f64> {
+    pub fn parse_decimal(s: &str) -> Result<f64, EngineError> { // Changed to Result<_, EngineError>
         let normalized = s.trim()
             .replace('.', "")  // Remove thousand separators
             .replace(',', "."); // Replace decimal separator
 
         f64::from_str(&normalized)
-            .map_err(|e| anyhow!("Failed to parse decimal '{}': {}", s, e))
+            .map_err(|e| EngineError::CsvDataFormatError(format!("Failed to parse decimal '{}': {}", s, e)))
     }
 
     // Specifically for volume fields that might have a different thousand separator rule or be just a large number.
-    // The spec example "600.822.115,84" for volume is handled by parse_decimal.
-    // If there's a different format for volume, this function can be adjusted.
-    // For now, it's similar to parse_decimal, assuming the spec's example is representative.
-    pub fn parse_volume(s: &str) -> Result<f64> {
-        // Re-using parse_decimal as the example "600.822.115,84" fits its logic.
-        // If volume has a distinct format (e.g. always integer, or different separators), this should change.
-        parse_decimal(s)
+    pub fn parse_volume(s: &str) -> Result<f64, EngineError> { // Changed to Result<_, EngineError>
+        parse_decimal(s) // Reuses parse_decimal which now returns Result<_, EngineError>
     }
 
     // Parses date "dd/mm/yyyy" and time "HH:MM:SS" into DateTime<Utc>
-    pub fn parse_datetime(date_str: &str, time_str: &str) -> Result<DateTime<Utc>> {
+    pub fn parse_datetime(date_str: &str, time_str: &str) -> Result<DateTime<Utc>, EngineError> { // Changed
         let date = NaiveDate::parse_from_str(date_str, "%d/%m/%Y")
-            .map_err(|e| anyhow!("Failed to parse date '{}': {}", date_str, e))?;
+            .map_err(|e| EngineError::CsvDataFormatError(format!("Failed to parse date '{}': {}", date_str, e)))?;
         let time = NaiveTime::parse_from_str(time_str, "%H:%M:%S")
-            .map_err(|e| anyhow!("Failed to parse time '{}': {}", time_str, e))?;
+            .map_err(|e| EngineError::CsvDataFormatError(format!("Failed to parse time '{}': {}", time_str, e)))?;
 
         // Combine date and time, and assume it's in UTC.
         // If the CSV times are local, timezone conversion would be needed here.
@@ -95,50 +93,60 @@ pub struct BrazilianCsvParser;
 impl BrazilianCsvParser {
     // CSV Header: Ativo;Data;Hora;Abertura;Máximo;Mínimo;Fechamento;Volume;Quantidade
     // Example Row: WINFUT;30/12/2024;18:20:00;124.080;124.090;123.938;123.983;600.822.115,84;24.228
-    pub fn load_candles_from_csv(file_path: &str, default_symbol: &str) -> Result<Vec<Candle>> {
-        let file = File::open(file_path).map_err(|e| anyhow!("Failed to open CSV file '{}': {}", file_path, e))?;
+    pub fn load_candles_from_csv(file_path: &str, default_symbol: &str) -> Result<Vec<Candle>, EngineError> {
+        let file = File::open(file_path).map_err(|e| EngineError::IoError{ source: e })?;
         let mut rdr = ReaderBuilder::new()
             .delimiter(b';')
             .has_headers(true) // Assuming the first row is a header
             .from_reader(BufReader::new(file));
 
         let mut candles = Vec::new();
-        let headers = rdr.headers()?.clone(); // Read headers to map by name if needed, or ensure column order
+        // Map csv::Error to EngineError::CsvSystemError
+        let headers = rdr.headers().map_err(|e| EngineError::CsvSystemError{ source: e })?.clone();
 
         for (idx, result) in rdr.records().enumerate() {
-            let record = result.map_err(|e| anyhow!("Error reading CSV record at line {}: {}", idx + 2, e))?;
+            // Map csv::Error to EngineError::CsvSystemError
+            let record = result.map_err(|e| EngineError::CsvSystemError{ source: e })?;
+            let line_num = idx + 2; // For user-friendly error messages (1-based index + header)
 
-            let symbol_str = Self::get_field(&record, &headers, "Ativo")?.unwrap_or(default_symbol);
-            let date_str = Self::get_field(&record, &headers, "Data")?.ok_or_else(|| anyhow!("Missing 'Data' field in CSV record at line {}", idx + 2))?;
-            let time_str = Self::get_field(&record, &headers, "Hora")?.ok_or_else(|| anyhow!("Missing 'Hora' field in CSV record at line {}", idx + 2))?;
+            let get_field_or_err = |name: &str| {
+                Self::get_field(&record, &headers, name)
+                    .map_err(EngineError::from) // Convert anyhow::Error from get_field to EngineError
+                    .and_then(|opt_val| {
+                        opt_val.ok_or_else(|| EngineError::CsvDataFormatError(format!("Missing '{}' field in CSV record at line {}", name, line_num)))
+                    })
+            };
 
-            let open_str = Self::get_field(&record, &headers, "Abertura")?.ok_or_else(|| anyhow!("Missing 'Abertura' field in CSV record at line {}", idx + 2))?;
-            let high_str = Self::get_field(&record, &headers, "Máximo")?.ok_or_else(|| anyhow!("Missing 'Máximo' field in CSV record at line {}", idx + 2))?;
-            let low_str = Self::get_field(&record, &headers, "Mínimo")?.ok_or_else(|| anyhow!("Missing 'Mínimo' field in CSV record at line {}", idx + 2))?;
-            let close_str = Self::get_field(&record, &headers, "Fechamento")?.ok_or_else(|| anyhow!("Missing 'Fechamento' field in CSV record at line {}", idx + 2))?;
+            let symbol_str = Self::get_field(&record, &headers, "Ativo")?.unwrap_or(default_symbol); // get_field can return anyhow error
+            let date_str = get_field_or_err("Data")?;
+            let time_str = get_field_or_err("Hora")?;
 
-            let volume_str = Self::get_field(&record, &headers, "Volume")?.ok_or_else(|| anyhow!("Missing 'Volume' field in CSV record at line {}", idx + 2))?;
-            let trades_str = Self::get_field(&record, &headers, "Quantidade")?.ok_or_else(|| anyhow!("Missing 'Quantidade' field in CSV record at line {}", idx + 2))?;
+            let open_str = get_field_or_err("Abertura")?;
+            let high_str = get_field_or_err("Máximo")?;
+            let low_str = get_field_or_err("Mínimo")?;
+            let close_str = get_field_or_err("Fechamento")?;
 
+            let volume_str = get_field_or_err("Volume")?;
+            let trades_str = get_field_or_err("Quantidade")?;
+
+            // brazilian_format functions now return Result<_, EngineError>
             let timestamp = brazilian_format::parse_datetime(date_str, time_str)
-                .map_err(|e| anyhow!("Error parsing datetime at line {}: {}", idx + 2, e))?;
+                .map_err(|e| EngineError::CsvDataFormatError(format!("{} at line {}", e, line_num)))?;
 
             let open = brazilian_format::parse_decimal(open_str)
-                .map_err(|e| anyhow!("Error parsing 'Abertura' at line {}: {}", idx + 2, e))?;
+                .map_err(|e| EngineError::CsvDataFormatError(format!("Error parsing 'Abertura': {} at line {}", e, line_num)))?;
             let high = brazilian_format::parse_decimal(high_str)
-                .map_err(|e| anyhow!("Error parsing 'Máximo' at line {}: {}", idx + 2, e))?;
+                .map_err(|e| EngineError::CsvDataFormatError(format!("Error parsing 'Máximo': {} at line {}", e, line_num)))?;
             let low = brazilian_format::parse_decimal(low_str)
-                .map_err(|e| anyhow!("Error parsing 'Mínimo' at line {}: {}", idx + 2, e))?;
+                .map_err(|e| EngineError::CsvDataFormatError(format!("Error parsing 'Mínimo': {} at line {}", e, line_num)))?;
             let close = brazilian_format::parse_decimal(close_str)
-                .map_err(|e| anyhow!("Error parsing 'Fechamento' at line {}: {}", idx + 2, e))?;
+                .map_err(|e| EngineError::CsvDataFormatError(format!("Error parsing 'Fechamento': {} at line {}", e, line_num)))?;
 
-            let volume = brazilian_format::parse_volume(volume_str) // Using parse_volume, though parse_decimal might suffice based on example
-                .map_err(|e| anyhow!("Error parsing 'Volume' at line {}: {}", idx + 2, e))?;
+            let volume = brazilian_format::parse_volume(volume_str)
+                .map_err(|e| EngineError::CsvDataFormatError(format!("Error parsing 'Volume': {} at line {}", e, line_num)))?;
 
-            // "Quantidade" (trades) seems to be an integer in the example "24.228"
-            // Assuming '.' is a thousand separator here for trades count.
             let trades = trades_str.replace('.', "").parse::<u32>()
-                .map_err(|e| anyhow!("Error parsing 'Quantidade' at line {}: {}", idx + 2, e))?;
+                .map_err(|e| EngineError::CsvDataFormatError(format!("Error parsing 'Quantidade' {} as u32: {} at line {}", trades_str, e, line_num)))?;
 
             candles.push(Candle {
                 symbol: symbol_str.to_string(),
@@ -154,16 +162,18 @@ impl BrazilianCsvParser {
         Ok(candles)
     }
 
-    // Helper to get field by header name; falls back to index if headers are not as expected or not used.
-    // This makes parsing more robust to column reordering if headers are present.
-    fn get_field<'a>(record: &'a StringRecord, headers: &'a StringRecord, name: &str) -> Result<Option<&'a str>> {
+    // Helper to get field by header name.
+    // If the header name is not found, it returns Ok(None).
+    // This is different from a mandatory field missing, which is checked by .ok_or_else in the calling code.
+    fn get_field<'a>(record: &'a StringRecord, headers: &'a StringRecord, name: &str) -> Result<Option<&'a str>, EngineError> {
         match headers.iter().position(|header| header == name) {
             Some(pos) => Ok(record.get(pos)),
             None => {
-                // This could be an error if the field is mandatory by name
-                // For now, returning None to indicate it wasn't found by name
-                // Err(anyhow!("Header '{}' not found", name))
-                Ok(None) // Or handle specific column indices as fallback if header name is not critical
+                // It's not an error for a column potentially not existing (e.g. "Ativo" might be optional if default_symbol is used)
+                // If a *mandatory* column is missing by header name, the .ok_or_else() in the caller handles it.
+                // If we wanted to error if the *header itself* is not defined, this would be the place.
+                // For now, if header `name` isn't in `headers`, we assume the field is simply not present in this record.
+                Ok(None)
             }
         }
     }

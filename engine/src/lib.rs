@@ -6,10 +6,7 @@ pub mod data;
 pub mod indicators;
 pub mod services;
 pub mod models; // Even if models/candle.rs is minimal, the module itself exists.
-
-// You might also include common error types or utility functions specific to the engine library here.
-// For example:
-// pub mod error;
+pub mod error;
 
 // The build script will place generated protobuf code in src/services/generated,
 // which is then included by src/services/mod.rs.
