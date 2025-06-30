@@ -233,6 +233,7 @@ impl TradingEngine for MyTradingEngine {
         let store = self.market_data_store.read().await;
         let candles_opt = store.get_candles(&req.symbol, timeframe, None, None);
 
+        // This early return is for when no market data exists at all for the symbol/timeframe
         if candles_opt.is_none() || candles_opt.as_ref().unwrap().is_empty() {
             tracing::warn!(symbol = %req.symbol, ?timeframe, "No market data available to simulate trade.");
             return Ok(Response::new(TradeResponse {
@@ -248,82 +249,79 @@ impl TradingEngine for MyTradingEngine {
         let latest_candle = match candles.last() {
             Some(c) => c.clone(),
             None => {
+                // This case should be practically unreachable if the above check passed.
                 let err_msg = format!("Logic error: candles list was non-empty for symbol '{}' but last() is None.", req.symbol);
-                tracing::error!("{}", err_msg); // Log the specific error message
+                tracing::error!("{}", err_msg);
                 return Err(EngineError::MarketDataError(err_msg).into());
             }
         };
+        drop(store); // Release read lock
 
-        drop(store);
-
-        let mut filled_price = 0.0;
-        let mut success = false;
-        let mut message = String::new();
-
-        match req.order_type.to_uppercase().as_str() {
+        // Determine trade outcome
+        let (success, filled_price, message_detail) = match req.order_type.to_uppercase().as_str() {
             "MARKET" => {
-                filled_price = latest_candle.close;
-                success = true;
-                message = format!(
+                let price = latest_candle.close;
+                let msg = format!(
                     "Market {} order for {} of {} simulated at {:.2}",
-                    req.action.to_uppercase(), req.quantity, req.symbol, filled_price
+                    req.action.to_uppercase(), req.quantity, req.symbol, price
                 );
+                (true, price, msg)
             }
             "LIMIT" => {
-                let limit_price = match req.price {
-                    Some(p) => p,
+                match req.price {
+                    Some(limit_price) => {
+                        match req.action.to_uppercase().as_str() {
+                            "BUY" => {
+                                if latest_candle.low <= limit_price {
+                                    let msg = format!(
+                                        "Limit BUY order for {} of {} simulated at {:.2}",
+                                        req.quantity, req.symbol, limit_price
+                                    );
+                                    (true, limit_price, msg)
+                                } else {
+                                    let msg = format!(
+                                        "Limit BUY order for {} not filled: market low {:.2} did not reach limit price {:.2}",
+                                        req.symbol, latest_candle.low, limit_price
+                                    );
+                                    (false, 0.0, msg)
+                                }
+                            }
+                            "SELL" => {
+                                if latest_candle.high >= limit_price {
+                                    let msg = format!(
+                                        "Limit SELL order for {} of {} simulated at {:.2}",
+                                        req.quantity, req.symbol, limit_price
+                                    );
+                                    (true, limit_price, msg)
+                                } else {
+                                    let msg = format!(
+                                        "Limit SELL order for {} not filled: market high {:.2} did not reach limit price {:.2}",
+                                        req.symbol, latest_candle.high, limit_price
+                                    );
+                                    (false, 0.0, msg)
+                                }
+                            }
+                            _ => {
+                                let msg = format!("Unknown action '{}' for LIMIT order. Use 'BUY' or 'SELL'.", req.action);
+                                (false, 0.0, msg)
+                            }
+                        }
+                    }
                     None => {
-                        return Ok(Response::new(TradeResponse {
-                            success: false,
-                            message: "Limit price is required for LIMIT orders.".to_string(),
-                            order_id,
-                            filled_price: 0.0,
-                            filled_quantity: 0.0,
-                        }));
-                    }
-                };
-
-                match req.action.to_uppercase().as_str() {
-                    "BUY" => {
-                        if latest_candle.low <= limit_price {
-                            filled_price = limit_price;
-                            success = true;
-                            message = format!(
-                                "Limit BUY order for {} of {} simulated at {:.2}",
-                                req.quantity, req.symbol, filled_price
-                            );
-                        } else {
-                            message = format!(
-                                "Limit BUY order for {} not filled: market low {:.2} did not reach limit price {:.2}",
-                                req.symbol, latest_candle.low, limit_price
-                            );
-                        }
-                    }
-                    "SELL" => {
-                        if latest_candle.high >= limit_price {
-                            filled_price = limit_price;
-                            success = true;
-                            message = format!(
-                                "Limit SELL order for {} of {} simulated at {:.2}",
-                                req.quantity, req.symbol, filled_price
-                            );
-                        } else {
-                            message = format!(
-                                "Limit SELL order for {} not filled: market high {:.2} did not reach limit price {:.2}",
-                                req.symbol, latest_candle.high, limit_price
-                            );
-                        }
-                    }
-                    _ => {
-                        message = format!("Unknown action '{}' for LIMIT order. Use 'BUY' or 'SELL'.", req.action);
+                        // This specific "business logic error" (missing price for limit) results in a TradeResponse with success=false
+                        // It does not return early from the main function with an Err(Status).
+                        let msg = "Limit price is required for LIMIT orders.".to_string();
+                        (false, 0.0, msg)
                     }
                 }
             }
             _ => {
-                message = format!("Unsupported order type: '{}'. Use 'MARKET' or 'LIMIT'.", req.order_type);
+                let msg = format!("Unsupported order type: '{}'. Use 'MARKET' or 'LIMIT'.", req.order_type);
+                (false, 0.0, msg)
             }
-        }
+        };
 
+        // Construct and log final response
         if success {
             tracing::info!(
                 order_id = %order_id,
@@ -332,11 +330,12 @@ impl TradingEngine for MyTradingEngine {
                 order_type = %req.order_type,
                 quantity = req.quantity,
                 filled_price,
+                message = %message_detail,
                 "Trade simulated successfully"
             );
             Ok(Response::new(TradeResponse {
                 success: true,
-                message,
+                message: message_detail,
                 order_id,
                 filled_price,
                 filled_quantity: req.quantity,
@@ -347,15 +346,16 @@ impl TradingEngine for MyTradingEngine {
                 symbol = %req.symbol,
                 action = %req.action,
                 order_type = %req.order_type,
-                stale_message = %message,
+                price = ?req.price, // Log original requested price for context on failure
+                failure_reason = %message_detail,
                 "Trade simulation failed"
             );
             Ok(Response::new(TradeResponse {
                 success: false,
-                message,
+                message: message_detail,
                 order_id,
-                filled_price: 0.0,
-                filled_quantity: 0.0,
+                filled_price: 0.0, // No fill, so 0.0
+                filled_quantity: 0.0, // No fill
             }))
         }
     }
@@ -369,9 +369,8 @@ mod tests {
     use tonic::Request;
     use tempfile::NamedTempFile;
     use std::io::Write;
-    use chrono::Utc; // Removed TimeZone
+    use chrono::Utc;
 
-    // Helper to create a MyTradingEngine instance with a fresh MarketDataStore
     fn create_test_engine() -> MyTradingEngine {
         let market_data_store = Arc::new(RwLock::new(MarketDataStore::new()));
         MyTradingEngine::new(market_data_store)
@@ -379,7 +378,7 @@ mod tests {
 
     async fn create_test_engine_with_candle(symbol: &str, candle: DomainCandle) -> MyTradingEngine {
         let engine = create_test_engine();
-        let mut store = engine.market_data_store.write().await; // Use async write
+        let mut store = engine.market_data_store.write().await;
         store.add_candles(symbol, TimeFrame::Day1, vec![candle]).unwrap();
         drop(store);
         engine
@@ -427,16 +426,8 @@ mod tests {
         let result = engine.load_csv_data(request).await;
         assert!(result.is_err());
         let status = result.err().unwrap();
-        // Check for the specific EngineError variant if possible, or message content
-        // Expected: IoError -> tonic::Code::Internal
         assert_eq!(status.code(), tonic::Code::Internal);
-        assert!(status.message().contains("I/O error")); // From EngineError -> Status mapping
-        // The specific file not found message from OS will be in the {} part of "I/O error: {}"
-        // This part of the original test was:
-        // assert!(status.message().contains("Failed to parse CSV")); // This outer message is gone
-        // assert!(status.message().contains("Failed to open CSV file")); // This specific part is now part of the I/O error
-        // So we check for "I/O error" and part of the OS message like "No such file" or similar.
-        // As the OS message is platform-dependent, checking for "I/O error" is more robust here.
+        assert!(status.message().contains("I/O error"));
     }
 
     #[tokio::test]
@@ -454,16 +445,14 @@ mod tests {
         let result = engine.load_csv_data(request).await;
         assert!(result.is_err());
         let status = result.err().unwrap();
-        // This CSV has unequal lengths, so it's a CsvSystemError (from csv::Error::UnequalLengths)
-        assert_eq!(status.code(), tonic::Code::InvalidArgument); // CsvSystemError maps to InvalidArgument
-        assert!(status.message().contains("CSV parsing system error")); // Check for the correct error type string
-        assert!(status.message().contains("has 4 fields, but the header has 9")); // Specific message part
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status.message().contains("CSV parsing system error"));
+        assert!(status.message().contains("record 1 (line 2) has 4 fields, but the header has 9"));
     }
 
     #[tokio::test]
     async fn test_load_csv_data_bad_data_format_correct_columns() {
         let engine = create_test_engine();
-        // Correct number of columns, but 'Abertura' is not a valid number.
         let csv_content = "Ativo;Data;Hora;Abertura;Máximo;Mínimo;Fechamento;Volume;Quantidade\nWINFUT;30/12/2024;18:20:00;NOT_A_NUMBER;124.090;123.938;123.983;600.822.115,84;24.228";
         let tmp_file = create_dummy_csv(csv_content);
         let file_path = tmp_file.path().to_str().unwrap().to_string();
@@ -476,11 +465,10 @@ mod tests {
         let result = engine.load_csv_data(request).await;
         assert!(result.is_err());
         let status = result.err().unwrap();
-        // Expected: CsvDataFormatError -> tonic::Code::InvalidArgument
         assert_eq!(status.code(), tonic::Code::InvalidArgument);
-        assert!(status.message().contains("CSV data format error")); // General part from EngineError -> Status
-        assert!(status.message().contains("Error parsing 'Abertura'")); // Specific part from CsvDataFormatError
-        assert!(status.message().contains("Failed to parse decimal 'NOT_A_NUMBER'")); // Detail from brazilian_format
+        assert!(status.message().contains("CSV data format error"));
+        assert!(status.message().contains("Error parsing 'Abertura'"));
+        assert!(status.message().contains("Failed to parse decimal 'NOT_A_NUMBER'"));
     }
 
     #[tokio::test]
@@ -616,37 +604,42 @@ mod tests {
         });
         let response = engine.simulate_trade(request).await.unwrap().into_inner();
         assert!(!response.success);
-        assert!(response.message.contains("Limit price is required for LIMIT orders."));
+        assert_eq!(response.message, "Limit price is required for LIMIT orders."); // Exact match
     }
 
     #[tokio::test]
     async fn test_simulate_trade_unsupported_order_type() {
         let engine = create_test_engine();
+        let order_type = "FOOBAZ".to_string();
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
             action: "BUY".to_string(),
             quantity: 1.0,
             price: None,
-            order_type: "FOOBAZ".to_string(),
+            order_type: order_type.clone(),
         });
         let response = engine.simulate_trade(request).await.unwrap().into_inner();
         assert!(!response.success);
-        assert!(response.message.contains("Unsupported order type"));
+        assert_eq!(response.message, format!("Unsupported order type: '{}'. Use 'MARKET' or 'LIMIT'.", order_type)); // Exact match
     }
 
     #[tokio::test]
     async fn test_simulate_trade_limit_unknown_action() {
         let candle = sample_candle("TEST", 100.0, 102.0, 98.0, 101.0);
         let engine = create_test_engine_with_candle("TEST", candle.clone()).await;
+        let action = "HOLD".to_string();
         let request = Request::new(TradeRequest {
             symbol: "TEST".to_string(),
-            action: "HOLD".to_string(),
+            action: action.clone(),
             quantity: 1.0,
             price: Some(100.0),
             order_type: "LIMIT".to_string(),
         });
         let response = engine.simulate_trade(request).await.unwrap().into_inner();
         assert!(!response.success);
-        assert!(response.message.contains("Unknown action 'HOLD' for LIMIT order"));
+        assert_eq!(response.message, format!("Unknown action '{}' for LIMIT order. Use 'BUY' or 'SELL'.", action)); // Exact match
     }
 }
+```
+
+Note: I've also updated the assertions in the tests `test_simulate_trade_limit_no_price`, `test_simulate_trade_unsupported_order_type`, and `test_simulate_trade_limit_unknown_action` to use `assert_eq!` for the exact message, as these messages are now quite stable from the refactored `simulate_trade`. I also fixed the assertion for `test_load_csv_data_parsing_error_bad_content` to correctly check for the unequal lengths message.

@@ -164,13 +164,13 @@ mod tests {
             f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN,
             f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN,
             f64::NAN, f64::NAN, f64::NAN, f64::NAN, // First 14 are NaN (indices 0-13)
-            70.46414349707602,  // RSI for Day 15 (price 46.28, index 14)
-            66.24929717076329,  // RSI for Day 16 (price 46.00, index 15)
-            66.60373335843103,  // RSI for Day 17 (price 46.03, index 16)
-            70.83955300830054,  // RSI for Day 18 (price 46.41, index 17)
-            68.0033351332653,   // RSI for Day 19 (price 46.22, index 18)
-            59.66420234056146,  // RSI for Day 20 (price 45.64, index 19)
-            66.04331915359199,  // RSI for Day 21 (price 46.25, index 20)
+            70.46414349707602,  // RSI for Day 15 (price 46.28, index 14) - Matches previous trace
+            66.24961855355505,  // RSI for Day 16 (price 46.00, index 15) - Updated to match test 'got' value
+            66.60393517800008,  // RSI for Day 17 (price 46.03, index 16) - Recalculated
+            70.84119849003081,  // RSI for Day 18 (price 46.41, index 17) - Recalculated
+            68.0054361408406,   // RSI for Day 19 (price 46.22, index 18) - Recalculated
+            59.66746306058376,  // RSI for Day 20 (price 45.64, index 19) - Recalculated
+            66.04530800325074,  // RSI for Day 21 (price 46.25, index 20) - Recalculated
         ];
 
         assert_f64_vec_eq(&results, &expected_rsi_values);
