@@ -6,6 +6,10 @@ use dioxus_desktop::{Config, LogicalSize}; // Import Config and LogicalSize for 
 // If app.rs is indeed src/app.rs, this line might not be strictly needed
 // but doesn't hurt.
 mod app;
+mod components;
+mod config;
+mod services;
+mod state;
 
 fn main() {
     // Use the simplest launch function for Dioxus 0.5+
