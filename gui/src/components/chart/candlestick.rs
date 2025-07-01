@@ -1,7 +1,8 @@
 // Candlestick chart rendering component
 #![allow(non_snake_case)]
 use dioxus::prelude::*;
-use shared::models::Candle; // Import the Candle struct
+use shared::models::{Candle, Indicator}; // Import Candle and Indicator structs
+use crate::components::chart::indicators::IndicatorOverlay; // Import IndicatorOverlay
 
 // This will be a complex component. For now, a simple placeholder.
 // It will need to:
@@ -17,6 +18,8 @@ pub struct CandlestickChartProps {
     pub width: f64,
     #[props(default = 400.0)] // Default height
     pub height: f64,
+    #[props(optional)] // Indicators are optional
+    pub indicator_data: Option<Vec<Indicator>>,
     // TODO: Add other config like colors from AppConfig later
 }
 
@@ -142,6 +145,25 @@ pub fn CandlestickChart(cx: Scope<CandlestickChartProps>) -> Element {
                     // as coordinates are calculated relative to the SVG root.
                     // However, individual elements are positioned using margin_left and margin_top logic.
                     candle_elements
+                }
+                // Render IndicatorOverlay if data is provided
+                {
+                    if let Some(indicators) = &cx.props.indicator_data {
+                        if !indicators.is_empty() {
+                            rsx! {
+                                IndicatorOverlay {
+                                    indicators: indicators.clone(),
+                                    min_price: min_price,
+                                    max_price: max_price,
+                                    plot_height: plot_height,
+                                    margin_left: margin_left,
+                                    margin_top: margin_top,
+                                    candle_plot_width: candle_plot_width,
+                                    num_candles_on_chart: candles.len()
+                                }
+                            }
+                        } else { None }
+                    } else { None }
                 }
                 // Remove placeholder text or comment out
                 /*

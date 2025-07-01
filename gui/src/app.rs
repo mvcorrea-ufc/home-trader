@@ -8,7 +8,8 @@ use crate::components::command_palette::CommandPalette;
 use crate::components::chart::candlestick::CandlestickChart; // Import CandlestickChart
 use crate::config::AppConfig;
 use crate::state::app_state::AppState;
-use shared::models::Candle; // Import Candle model
+use shared::models::{Candle, Indicator}; // Import Candle and Indicator models
+use serde_json::json; // For creating dummy json parameters for Indicator
 
 #[component]
 pub fn App() -> Element {
@@ -58,6 +59,48 @@ pub fn App() -> Element {
             },
         ]
     });
+
+    let sample_sma_indicator = use_ref(cx, || {
+        let candles_data = sample_candles.read();
+        let period = 3; // SMA period
+        let mut sma_values: Vec<f64> = Vec::new();
+
+        if candles_data.len() >= period {
+            for i in 0..candles_data.len() {
+                if i < period -1 {
+                    // Not enough data for full SMA, could push NaN or skip
+                    // For plotting, often better to have a value, even if it's an estimate or partial
+                    // Or, ensure indicator data starts only when enough points are available.
+                    // For this simple example, let's just start SMA when enough data.
+                    // Or let's pad with first few values, which is not correct SMA but fills data.
+                    // A common way is to have fewer indicator points than candle points.
+                    // For now, let's make the indicator values align with candles from the first possible point.
+                    // So, the first `period-1` indicator values will be missing.
+                    // The IndicatorOverlay will need to handle this (e.g. by starting its line later).
+                    // Alternative: pad with NaN or some other value.
+                    // For simplicity of rendering a continuous line for now, let's make a simple running average.
+                    // This is NOT a true SMA for the first few points but makes the line continuous.
+                     let current_slice = &candles_data[0..=i];
+                     let sum: f64 = current_slice.iter().map(|c| c.close).sum();
+                     sma_values.push(sum / (current_slice.len() as f64) );
+
+                } else {
+                    let current_slice = &candles_data[(i - period + 1)..=i];
+                    let sum: f64 = current_slice.iter().map(|c| c.close).sum();
+                    sma_values.push(sum / (period as f64));
+                }
+            }
+        }
+
+        vec![
+            Indicator {
+                name: "SMA".to_string(),
+                parameters: json!({"period": period}),
+                values: sma_values,
+            }
+        ]
+    });
+
 
     // Effect for global keyboard listener
     // This is a common way to handle global events in Dioxus.
@@ -128,9 +171,10 @@ pub fn App() -> Element {
                 div {
                     style: "margin-top: 20px; border: 1px solid #555; box-shadow: 0 0 10px rgba(0,0,0,0.5);",
                     CandlestickChart {
-                        candles: sample_candles.read().clone(), // Pass the sample data
-                        width: 800.0,  // Can be made dynamic or from config later
-                        height: 450.0, // Can be made dynamic or from config later
+                        candles: sample_candles.read().clone(),
+                        width: 800.0,
+                        height: 450.0,
+                        indicator_data: Some(sample_sma_indicator.read().clone()) // Pass sample SMA data
                     }
                 }
                 // Placeholder for other UI elements like Toolbar, Indicator controls etc.
