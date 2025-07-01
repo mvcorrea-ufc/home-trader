@@ -10,7 +10,7 @@ use crate::data::market_data::MarketDataStore;
 use crate::services::{MarketDataRequest, MarketDataResponse, ProtoCandle as GrpcCandle};
 use shared::models::{/*Candle as DomainCandle,*/ TimeFrame}; // DomainCandle not directly used here due to helpers
 use super::helpers::{to_grpc_candle, from_grpc_timestamp};
-use crate::error::EngineError; // from_grpc_timestamp returns EngineError
+// use crate::error::EngineError; // from_grpc_timestamp is in helpers, which handles EngineError internally or returns it. This handler converts to Status.
 
 pub async fn handle_get_market_data(
     req_payload: MarketDataRequest,

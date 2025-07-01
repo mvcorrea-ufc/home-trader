@@ -4,19 +4,18 @@
 // and declares submodules for handlers and helpers.
 
 // Use statements adjusted for the new module structure.
-// `super::*` refers to items in `engine/src/services/mod.rs`
-use super::{
+use super::{ // Imports from engine/src/services/mod.rs
     TradingEngine, LoadCsvRequest, LoadCsvResponse,
-    MarketDataRequest, MarketDataResponse, ProtoCandle as GrpcCandle,
+    MarketDataRequest, MarketDataResponse, // MarketDataResponse uses super::generated::Candle implicitly
     IndicatorRequest, IndicatorResponse,
     TradeRequest, TradeResponse,
+    ProtoCandle as GrpcCandle, // This alias might be used by tests via super::*
 };
 use crate::data::market_data::MarketDataStore;
-// DomainCandle and TimeFrame are used by the test module in this file.
-use shared::models::{Candle as DomainCandle, TimeFrame};
-use tokio_stream::wrappers::ReceiverStream; // Needed for GetMarketDataStream type alias
-use tonic::{Request, Response, Status}; // Core tonic types for method signatures
-use std::sync::Arc; // Needed for MyTradingEngine struct
+// shared::models are moved to mod tests
+use tokio_stream::wrappers::ReceiverStream;
+use tonic::{Request, Response, Status};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 // Declare submodules for handlers and helpers. These are now sibling modules.
@@ -91,16 +90,15 @@ impl TradingEngine for MyTradingEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::*; // Pulls in MyTradingEngine, TimeFrame, DomainCandle, GrpcCandle, etc. from this file's scope
-                  // Also pulls in LoadCsvRequest etc. from the `use crate::services::{...}` at the top.
-    use crate::data::market_data::MarketDataStore; // Explicit path for tests
-    // Arc, RwLock, Request are already imported at the top level of this mod.rs
+    use super::*;
+    use crate::data::market_data::MarketDataStore;
+    use shared::models::{Candle as DomainCandle, TimeFrame}; // Moved here
     use tempfile::NamedTempFile;
     use std::io::Write;
     use chrono::Utc;
 
     fn create_test_engine() -> MyTradingEngine {
-        let market_data_store = Arc::new(MarketDataStore::new());
+        let market_data_store = Arc::new(RwLock::new(MarketDataStore::new())); // Changed here
         MyTradingEngine::new(market_data_store)
     }
 
