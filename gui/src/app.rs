@@ -8,7 +8,8 @@ use crate::components::command_palette::CommandPalette;
 use crate::components::chart::candlestick::CandlestickChart; // Import CandlestickChart
 use crate::config::AppConfig;
 use crate::state::app_state::AppState;
-use shared::models::{Candle, Indicator}; // Import Candle and Indicator models
+use crate::services::engine_client::EngineClient; // Import EngineClient
+use shared::models::{Candle, Indicator, MarketData}; // Import Candle, Indicator, MarketData
 use serde_json::json; // For creating dummy json parameters for Indicator
 
 #[component]
@@ -17,93 +18,60 @@ pub fn App() -> Element {
     let app_config = match AppConfig::load_default() {
         Ok(config) => config,
         Err(e) => {
+            // Consider a more graceful error display than panic in a real app
             panic!("Failed to load default configuration: {:?}", e);
         }
     };
 
-    // Provide AppState and AppConfig to the component tree
-    let app_state_provider = use_shared_state_provider(cx, AppState::default);
-    let app_config_provider = use_shared_state_provider(cx, || app_config.clone()); // Clone for the closure
+    // Provide AppState, AppConfig, and EngineClient (Option) to the component tree
+    use_shared_state_provider(cx, AppState::default);
+    use_shared_state_provider(cx, || app_config.clone());
+    use_shared_state_provider::<Option<EngineClient>>(cx, || None);
+
 
     let window = use_window(cx);
-    let app_state = use_shared_state::<AppState>(cx).unwrap();
-    let app_config_for_shortcut = app_config_provider.read().clone();
+    let app_state_ref = use_shared_state::<AppState>(cx).unwrap();
+    let app_config_ref = use_shared_state::<AppConfig>(cx).unwrap();
+    let engine_client_ref = use_shared_state::<Option<EngineClient>>(cx).unwrap();
 
-    // Create sample candle data
-    let sample_candles = use_ref(cx, || {
-        vec![
-            Candle {
-                symbol: "SAMPLE".to_string(),
-                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 30, 0).unwrap(),
-                open: 100.0, high: 105.0, low: 98.0, close: 102.0, volume: 1000.0, trades: 100,
-            },
-            Candle {
-                symbol: "SAMPLE".to_string(),
-                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 31, 0).unwrap(),
-                open: 102.0, high: 103.0, low: 99.0, close: 100.0, volume: 1200.0, trades: 120,
-            },
-            Candle {
-                symbol: "SAMPLE".to_string(),
-                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 32, 0).unwrap(),
-                open: 100.0, high: 108.0, low: 100.0, close: 107.0, volume: 1500.0, trades: 150,
-            },
-            Candle {
-                symbol: "SAMPLE".to_string(),
-                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 33, 0).unwrap(),
-                open: 107.0, high: 110.0, low: 105.0, close: 106.0, volume: 1300.0, trades: 130,
-            },
-            Candle {
-                symbol: "SAMPLE".to_string(),
-                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 34, 0).unwrap(),
-                open: 106.0, high: 106.0, low: 102.0, close: 103.0, volume: 1100.0, trades: 110,
-            },
-        ]
-    });
+    // Clone necessary items for the async future
+    let app_config_clone_for_future = app_config_ref.read().clone();
+    let mut engine_client_writer = engine_client_ref.clone(); // Clone the UseSharedState handle
 
-    let sample_sma_indicator = use_ref(cx, || {
-        let candles_data = sample_candles.read();
-        let period = 3; // SMA period
-        let mut sma_values: Vec<f64> = Vec::new();
-
-        if candles_data.len() >= period {
-            for i in 0..candles_data.len() {
-                if i < period -1 {
-                    // Not enough data for full SMA, could push NaN or skip
-                    // For plotting, often better to have a value, even if it's an estimate or partial
-                    // Or, ensure indicator data starts only when enough points are available.
-                    // For this simple example, let's just start SMA when enough data.
-                    // Or let's pad with first few values, which is not correct SMA but fills data.
-                    // A common way is to have fewer indicator points than candle points.
-                    // For now, let's make the indicator values align with candles from the first possible point.
-                    // So, the first `period-1` indicator values will be missing.
-                    // The IndicatorOverlay will need to handle this (e.g. by starting its line later).
-                    // Alternative: pad with NaN or some other value.
-                    // For simplicity of rendering a continuous line for now, let's make a simple running average.
-                    // This is NOT a true SMA for the first few points but makes the line continuous.
-                     let current_slice = &candles_data[0..=i];
-                     let sum: f64 = current_slice.iter().map(|c| c.close).sum();
-                     sma_values.push(sum / (current_slice.len() as f64) );
-
-                } else {
-                    let current_slice = &candles_data[(i - period + 1)..=i];
-                    let sum: f64 = current_slice.iter().map(|c| c.close).sum();
-                    sma_values.push(sum / (period as f64));
+    // Initialize EngineClient asynchronously
+    use_future(cx, (), |_| {
+        let engine_config = app_config_clone_for_future.engine.clone();
+        let mut app_state_writer_for_error = app_state_ref.clone();
+        async move {
+            let endpoint = format!("http://{}:{}", engine_config.host, engine_config.port);
+            match EngineClient::new(endpoint).await {
+                Ok(client) => {
+                    *engine_client_writer.write() = Some(client);
+                    tracing::info!("Successfully connected to trading engine.");
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to connect to trading engine: {}", e);
+                    tracing::error!("{}", error_msg);
+                    app_state_writer_for_error.write().error_message = Some(error_msg);
                 }
             }
         }
-
-        vec![
-            Indicator {
-                name: "SMA".to_string(),
-                parameters: json!({"period": period}),
-                values: sma_values,
-            }
-        ]
     });
 
+    // Get necessary state for rendering
+    let app_state_reader = app_state_ref.read();
+    let display_candles = app_state_reader.current_candles_display.clone();
+    let display_indicators = app_state_reader.current_indicators_display.clone();
+    let is_loading = app_state_reader.is_loading;
+    let error_message = app_state_reader.error_message.clone();
+    let current_symbol = app_state_reader.current_symbol_display.clone();
+    // Drop the read lock
+    drop(app_state_reader);
 
     // Effect for global keyboard listener
     // This is a common way to handle global events in Dioxus.
+    // Use app_config_ref for shortcut string
+    let app_config_for_shortcut = app_config_ref.read().clone();
     // Note: Focus issues can sometimes affect keyboard event capture.
     // The main window or a root div needs to be focusable or events might not bubble up as expected.
     use_effect(cx, (), move |_| {
@@ -159,22 +127,39 @@ pub fn App() -> Element {
                 div {
                     style: "text-align: center; margin-bottom: 20px;",
                     h1 { "Home Trader" }
-                    p { "Press '{app_config.shortcuts.command_palette}' to open/close the command palette." }
+                    // Use app_config_ref for shortcut display
+                    p { "Press '{app_config_ref.read().shortcuts.command_palette}' to open/close the command palette." }
                     button {
-                        onclick: move |_| app_state_provider.write().command_palette_visible = !app_state_provider.read().command_palette_visible,
+                        // Use app_state_ref for onclick
+                        onclick: move |_| app_state_ref.write().command_palette_visible = !app_state_ref.read().command_palette_visible,
                         style: "padding: 8px 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;",
                         "Toggle Command Palette"
                     }
                 }
 
+                // Display loading status and error messages
+                if is_loading {
+                    rsx! { p { style: "color: yellow;", "Loading data..." } }
+                }
+                if let Some(err_msg) = &error_message {
+                    rsx! { p { style: "color: red;", "Error: {err_msg}" } }
+                }
+                if let Some(symbol) = &current_symbol {
+                    rsx! { h3 { "Displaying: {symbol}" } }
+                }
+
+
                 // Candlestick Chart
                 div {
                     style: "margin-top: 20px; border: 1px solid #555; box-shadow: 0 0 10px rgba(0,0,0,0.5);",
+                    // Pass dynamic data to CandlestickChart
+                    // Ensure display_candles and display_indicators are correctly typed for the chart
+                    // The chart component will need to handle Option<Vec<Candle>>
                     CandlestickChart {
-                        candles: sample_candles.read().clone(),
+                        candles: display_candles.unwrap_or_default(), // Pass empty vec if None, or chart handles Option
                         width: 800.0,
                         height: 450.0,
-                        indicator_data: Some(sample_sma_indicator.read().clone()) // Pass sample SMA data
+                        indicator_data: Some(display_indicators) // Pass current indicators
                     }
                 }
                 // Placeholder for other UI elements like Toolbar, Indicator controls etc.

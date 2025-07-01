@@ -22,14 +22,23 @@ pub struct AppState {
     pub current_theme: Theme,
     pub language: String, // e.g., "pt-BR", "en-US"
 
-    // Data related state
-    pub loaded_market_data: HashMap<String, MarketData>, // Keyed by symbol
-    pub active_indicators: HashMap<String, Vec<Indicator>>, // Keyed by symbol, then list of active indicators
+    // --- Data related state ---
+    // Storage for all loaded data, keyed by symbol
+    pub all_market_data: HashMap<String, MarketData>,
+    pub all_indicators: HashMap<String, Vec<Indicator>>, // Stores calculated indicators per symbol
 
-    // UI specific state
+    // Data for the currently active chart/symbol
+    pub current_symbol_display: Option<String>,
+    pub current_candles_display: Option<Vec<shared::models::Candle>>,
+    pub current_indicators_display: Vec<shared::models::Indicator>,
+
+    // UI feedback for data operations
+    pub is_loading: bool,
+    pub error_message: Option<String>,
+
+    // --- UI specific state ---
     pub command_palette_visible: bool,
-    // pub active_symbol: Option<String>,
-    // pub active_timeframe: Option<shared::models::TimeFrame>,
+    // pub active_timeframe: Option<shared::models::TimeFrame>, // Future use
 
     // Configuration loaded from default.json or user settings
     // pub config: AppConfig, // This might hold the deserialized config from assets/config/default.json
@@ -40,10 +49,18 @@ impl Default for AppState {
         Self {
             current_theme: Theme::Dark,
             language: "pt-BR".to_string(),
-            loaded_market_data: HashMap::new(),
-            active_indicators: HashMap::new(),
+
+            all_market_data: HashMap::new(),
+            all_indicators: HashMap::new(),
+
+            current_symbol_display: None,
+            current_candles_display: None,
+            current_indicators_display: Vec::new(),
+
+            is_loading: false,
+            error_message: None,
+
             command_palette_visible: false,
-            // active_symbol: None,
             // active_timeframe: None,
             // config: AppConfig::default(), // Assuming AppConfig has a default
         }
@@ -56,8 +73,49 @@ impl AppState {
         self.current_theme = theme;
     }
 
+    // Method to update display data after loading/changing symbol
+    pub fn set_display_data(&mut self, symbol: &str) {
+        self.current_symbol_display = Some(symbol.to_string());
+
+        if let Some(market_data_obj) = self.all_market_data.get(symbol) {
+            self.current_candles_display = Some(market_data_obj.candles.clone());
+        } else {
+            self.current_candles_display = None;
+        }
+
+        if let Some(indicators_for_symbol) = self.all_indicators.get(symbol) {
+            self.current_indicators_display = indicators_for_symbol.clone();
+        } else {
+            self.current_indicators_display = Vec::new();
+        }
+        self.error_message = None; // Clear previous error on new data load
+    }
+
     pub fn add_market_data(&mut self, data: MarketData) {
-        self.loaded_market_data.insert(data.symbol.clone(), data);
+        let symbol = data.symbol.clone();
+        self.all_market_data.insert(symbol.clone(), data);
+        // Optionally, directly set this as the display data
+        // self.set_display_data(&symbol);
+    }
+
+    pub fn add_indicator_to_symbol(&mut self, symbol: &str, indicator: Indicator) {
+        self.all_indicators.entry(symbol.to_string())
+            .or_default()
+            .push(indicator);
+
+        // If this symbol is currently displayed, update its display indicators
+        if self.current_symbol_display.as_deref() == Some(symbol) {
+            if let Some(indicators_for_symbol) = self.all_indicators.get(symbol) {
+                self.current_indicators_display = indicators_for_symbol.clone();
+            }
+        }
+    }
+
+    pub fn clear_indicators_for_symbol(&mut self, symbol: &str) {
+        self.all_indicators.remove(symbol);
+        if self.current_symbol_display.as_deref() == Some(symbol) {
+            self.current_indicators_display = Vec::new();
+        }
     }
 
     // More methods as needed...

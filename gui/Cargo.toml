@@ -26,6 +26,9 @@ prost = { workspace = true }
 # Shared library for data models
 shared = { path = "../shared" }
 
+# Engine crate for gRPC client and generated types
+engine = { path = "../engine" }
+
 # Potentially, if GUI needs to generate its own client stubs from .proto
 # This would require moving .proto to a shared location or duplicating it.
 # For now, assuming client types might be exposed by `engine` or handled differently.

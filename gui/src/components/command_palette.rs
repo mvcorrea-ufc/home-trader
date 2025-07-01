@@ -1,10 +1,14 @@
 // Command palette component (VSCode style)
 #![allow(non_snake_case)]
 use dioxus::prelude::*;
-use fuzzy_matcher::FuzzyMatcher; // Import FuzzyMatcher
-use fuzzy_matcher::skim::SkimMatcherV2; // Import SkimMatcherV2
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 
-use crate::state::app_state::AppState; // To control visibility and dispatch actions
+use crate::state::app_state::AppState;
+use crate::config::AppConfig; // Import AppConfig
+use crate::services::engine_client::EngineClient; // Import EngineClient
+use shared::models::{MarketData, Candle, Indicator}; // Import shared models
+use serde_json::json; // For indicator parameters
 
 // --- Command Structures ---
 
@@ -45,10 +49,15 @@ impl CommandDefinition {
 #[component]
 pub fn CommandPalette(cx: Scope) -> Element {
     let app_state = use_shared_state::<AppState>(cx).unwrap();
+    let app_config = use_shared_state::<AppConfig>(cx).unwrap();
+    // Clone the engine_client for use in async tasks. The Option<EngineClient> itself is not Clone,
+    // but the UseSharedState<Option<EngineClient>> handle is.
+    let engine_client_handle = use_shared_state::<Option<EngineClient>>(cx).unwrap();
+
 
     let all_commands = use_ref(cx, || {
         vec![
-            CommandDefinition::new(0, "Load CSV Data...", "Import market data from a CSV file", Command::LoadCsv { path: None }),
+            CommandDefinition::new(0, "Load CSV Data (Sample WINFUT)", "Import WINFUT market data from a sample CSV file", Command::LoadCsv { path: Some("tests/data/sample.csv".to_string()) }),
             CommandDefinition::new(1, "Add Indicator: SMA", "Add Simple Moving Average indicator", Command::AddIndicator { indicator_type: "SMA".to_string() }),
             CommandDefinition::new(2, "Add Indicator: EMA", "Add Exponential Moving Average indicator", Command::AddIndicator { indicator_type: "EMA".to_string() }),
             CommandDefinition::new(3, "Add Indicator: RSI", "Add Relative Strength Index indicator", Command::AddIndicator { indicator_type: "RSI".to_string() }),
@@ -59,7 +68,7 @@ pub fn CommandPalette(cx: Scope) -> Element {
 
     let filter_text = use_state(cx, String::new);
     let selected_index = use_state(cx, || 0usize);
-    let matcher = use_ref(cx, SkimMatcherV2::default); // Fuzzy matcher instance
+    let matcher = use_ref(cx, SkimMatcherV2::default);
 
     let filtered_commands = use_memo(cx, (filter_text, all_commands), move |(filter, cmds_ref)| {
         let cmds = cmds_ref.read();
@@ -74,14 +83,13 @@ pub fn CommandPalette(cx: Scope) -> Element {
             })
             .collect();
 
-        scored_commands.sort_by(|a, b| b.0.cmp(&a.0)); // Sort by score descending
+        scored_commands.sort_by(|a, b| b.0.cmp(&a.0));
         scored_commands.into_iter().map(|(_, cmd)| cmd).collect::<Vec<_>>()
     });
 
-    // Reset selected index when filter changes
     use_effect(cx, filtered_commands, |cmds| {
         selected_index.set(0);
-        async move { cmds } // use_effect expects a future
+        async move { cmds }
     });
 
     if !app_state.read().command_palette_visible {
@@ -90,73 +98,156 @@ pub fn CommandPalette(cx: Scope) -> Element {
 
     let handle_keydown = move |evt: KeyboardEvent| {
         let current_filtered_commands = filtered_commands.read();
-        if current_filtered_commands.is_empty() {
-            return;
-        }
+        if current_filtered_commands.is_empty() { return; }
 
         match evt.key() {
-            Key::ArrowDown => {
-                selected_index.set((selected_index.get() + 1) % current_filtered_commands.len());
-            }
-            Key::ArrowUp => {
-                selected_index.set(
-                    (selected_index.get() + current_filtered_commands.len() - 1) % current_filtered_commands.len(),
-                );
-            }
+            Key::ArrowDown => selected_index.set((selected_index.get() + 1) % current_filtered_commands.len()),
+            Key::ArrowUp => selected_index.set((selected_index.get() + current_filtered_commands.len() - 1) % current_filtered_commands.len()),
             Key::Enter => {
                 if let Some(cmd_def) = current_filtered_commands.get(*selected_index.get()) {
-                    execute_command(cmd_def.action.clone(), app_state, filter_text);
+                    // Clone necessary states for the closure
+                    let app_state_clone = app_state.clone();
+                    let app_config_clone = app_config.clone();
+                    let engine_client_handle_clone = engine_client_handle.clone();
+                    let filter_text_clone = filter_text.clone();
+
+                    execute_command(cx, cmd_def.action.clone(), app_state_clone, app_config_clone, engine_client_handle_clone, filter_text_clone);
                 }
             }
             Key::Escape => {
-                 app_state.write().command_palette_visible = false;
-                 filter_text.set(String::new()); // Reset filter
+                app_state.write().command_palette_visible = false;
+                filter_text.set(String::new());
             }
             _ => {}
         }
     };
 
-    // Separate function to handle command execution logic
-    let execute_command = |command: Command, app_state: &UseSharedState<AppState>, filter_text_state: &UseState<String>| {
+    // execute_command needs cx to spawn tasks
+    let execute_command = |
+        cx: Scope,
+        command: Command,
+        app_state: UseSharedState<AppState>,
+        app_config: UseSharedState<AppConfig>,
+        engine_client_handle: UseSharedState<Option<EngineClient>>,
+        filter_text_state: UseState<String>
+    | {
+        let mut app_state_writer = app_state.write();
+        app_state_writer.command_palette_visible = false;
+        filter_text_state.set(String::new());
+
+        // Clone client for async task. If it's None, we can't proceed for network tasks.
+        let client_guard = engine_client_handle.read();
+        let maybe_client = client_guard.as_ref().cloned();
+
         match command {
             Command::LoadCsv { path } => {
-                // For now, path is None. Later, this could open a file dialog or take input.
-                // If path is Some, use it.
-                let file_to_load = path.unwrap_or_else(|| "path/to/default.csv".to_string()); // Placeholder
-                tracing::info!("[COMMAND ACTION] Load CSV: {}", file_to_load);
-                // TODO: Call engine_client.load_csv(file_to_load, "SYMBOL")
-                // For now, we can simulate adding some data to AppState if needed for UI testing
+                let file_to_load = path.unwrap_or_else(|| "tests/data/sample.csv".to_string()); // Default to sample
+                let symbol = "WINFUT".to_string(); // For now, assume WINFUT for sample.csv
+
+                if let Some(mut client) = maybe_client {
+                    app_state_writer.is_loading = true;
+                    app_state_writer.error_message = None;
+                    drop(app_state_writer); // Release lock before await
+
+                    let app_state_clone = app_state.clone();
+                    cx.spawn(async move {
+                        let mut app_state_writer_async = app_state_clone.write();
+                        app_state_writer_async.clear_indicators_for_symbol(&symbol); // Clear old indicators
+
+                        match client.load_csv(file_to_load.clone(), symbol.clone()).await {
+                            Ok(load_msg) => {
+                                tracing::info!("[COMMAND ACTION] Load CSV: {}", load_msg);
+                                match client.get_market_data(symbol.clone()).await {
+                                    Ok(candles_vec) => {
+                                        let market_data = MarketData {
+                                            symbol: symbol.clone(),
+                                            candles: candles_vec,
+                                            timeframe: shared::models::TimeFrame::Minute1, // Assuming, needs to be dynamic
+                                        };
+                                        app_state_writer_async.add_market_data(market_data);
+                                        app_state_writer_async.set_display_data(&symbol);
+                                        app_state_writer_async.error_message = None;
+                                    }
+                                    Err(e) => {
+                                        let err_msg = format!("Failed to get market data for {}: {}", symbol, e);
+                                        tracing::error!("{}", err_msg);
+                                        app_state_writer_async.error_message = Some(err_msg);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let err_msg = format!("Failed to load CSV {}: {}", file_to_load, e);
+                                tracing::error!("{}", err_msg);
+                                app_state_writer_async.error_message = Some(err_msg);
+                            }
+                        }
+                        app_state_writer_async.is_loading = false;
+                    });
+                } else {
+                    app_state_writer.error_message = Some("Engine client not available.".to_string());
+                    tracing::warn!("[COMMAND ACTION] Engine client not available for Load CSV");
+                }
             }
             Command::AddIndicator { indicator_type } => {
-                tracing::info!("[COMMAND ACTION] Add Indicator: {}", indicator_type);
-                // TODO: Update AppState with the new indicator or call engine_client
+                let current_symbol = app_state_writer.current_symbol_display.clone();
+                if let Some(mut client) = maybe_client {
+                    if let Some(symbol) = current_symbol {
+                        app_state_writer.is_loading = true;
+                        app_state_writer.error_message = None;
+                        drop(app_state_writer); // Release lock
+
+                        let app_state_clone = app_state.clone();
+                        let app_config_reader = app_config.read(); // Read once
+
+                        // Determine parameters based on indicator_type from AppConfig
+                        let params_json = match indicator_type.as_str() {
+                            "SMA" => json!({"period": app_config_reader.indicators.sma.periods.get(0).unwrap_or(&20)}),
+                            "EMA" => json!({"period": app_config_reader.indicators.ema.periods.get(0).unwrap_or(&9)}),
+                            "RSI" => json!({"period": app_config_reader.indicators.rsi.period}),
+                            _ => json!({}),
+                        };
+                        drop(app_config_reader); // Release lock
+
+                        cx.spawn(async move {
+                            let mut app_state_writer_async = app_state_clone.write();
+                            match client.calculate_indicator(symbol.clone(), indicator_type.clone(), params_json.to_string()).await {
+                                Ok(Some(indicator_data)) => {
+                                    app_state_writer_async.add_indicator_to_symbol(&symbol, indicator_data);
+                                    // set_display_data is called implicitly by add_indicator_to_symbol if symbol matches
+                                    app_state_writer_async.error_message = None;
+                                    tracing::info!("[COMMAND ACTION] Added indicator {} for {}", indicator_type, symbol);
+                                }
+                                Ok(None) => {
+                                    let info_msg = format!("Indicator {} for {} returned no data.", indicator_type, symbol);
+                                    tracing::info!("{}", info_msg);
+                                    app_state_writer_async.error_message = Some(info_msg);
+                                }
+                                Err(e) => {
+                                    let err_msg = format!("Failed to calculate indicator {} for {}: {}", indicator_type, symbol, e);
+                                    tracing::error!("{}", err_msg);
+                                    app_state_writer_async.error_message = Some(err_msg);
+                                }
+                            }
+                            app_state_writer_async.is_loading = false;
+                        });
+                    } else {
+                        app_state_writer.error_message = Some("No active symbol to add indicator to.".to_string());
+                        tracing::warn!("[COMMAND ACTION] No active symbol for Add Indicator");
+                    }
+                } else {
+                    app_state_writer.error_message = Some("Engine client not available.".to_string());
+                    tracing::warn!("[COMMAND ACTION] Engine client not available for Add Indicator");
+                }
             }
             Command::Exit => {
                 tracing::info!("[COMMAND ACTION] Exit Application");
-                // Attempt to close the window. This is platform-specific.
-                // For Dioxus desktop, you might use the window handle.
-                // This is a simplified attempt; real exit might need more cleanup.
                 dioxus_desktop::use_window(cx).close();
             }
-            Command::Configure => {
-                tracing::info!("[COMMAND ACTION] Configure (Not implemented yet)");
-            }
-            Command::RemoveIndicator { name } => {
-                tracing::info!("[COMMAND ACTION] Remove Indicator: {} (Not implemented yet)", name);
-            }
-            Command::SaveProject { path } => {
-                let file_to_save = path.unwrap_or_else(|| "project_state.json".to_string());
-                tracing::info!("[COMMAND ACTION] Save Project to {}: (Not implemented yet)", file_to_save);
-            }
-            Command::LoadProject { path } => {
-                let file_to_load = path.unwrap_or_else(|| "project_state.json".to_string());
-                tracing::info!("[COMMAND ACTION] Load Project from {}: (Not implemented yet)", file_to_load);
+            _ => { // Handle other commands like Configure, RemoveIndicator, Save/Load Project
+                tracing::info!("[COMMAND ACTION] Command {:?} (Not fully implemented yet)", command);
             }
         }
-        app_state.write().command_palette_visible = false;
-        filter_text_state.set(String::new()); // Reset filter
     };
-
 
     cx.render(rsx! {
         div {

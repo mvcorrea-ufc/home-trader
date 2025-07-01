@@ -11,6 +11,7 @@ pub mod generated {
 }
 
 // Re-export generated types for easier access if needed elsewhere in the engine
+pub use generated::trading_engine_client::TradingEngineClient; // Added for GUI client access
 pub use generated::trading_engine_server::{TradingEngine, TradingEngineServer};
 pub use generated::{
     Candle as ProtoCandle, // Renaming to avoid conflict with shared::models::Candle
