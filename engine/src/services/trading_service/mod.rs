@@ -9,7 +9,7 @@ use super::{ // Imports from engine/src/services/mod.rs
     MarketDataRequest, MarketDataResponse,
     IndicatorRequest, IndicatorResponse,
     TradeRequest, TradeResponse,
-    // ProtoCandle as GrpcCandle, // Removed as unused
+    // ProtoCandle as GrpcCandle, // Removed as unused at this top level
 };
 use crate::data::market_data::MarketDataStore;
 // shared::models are moved to mod tests
@@ -96,9 +96,7 @@ mod tests {
     use tempfile::NamedTempFile;
     use std::io::Write;
     use chrono::Utc;
-    // Re-import GrpcCandle alias if needed by tests, or use full path
-    use crate::services::ProtoCandle as GrpcCandle;
-
+    // Removed: use crate::services::ProtoCandle as GrpcCandle; // This was causing unused import warning
 
     fn create_test_engine() -> MyTradingEngine {
         let market_data_store = Arc::new(RwLock::new(MarketDataStore::new()));
