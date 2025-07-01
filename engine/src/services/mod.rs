@@ -1,5 +1,5 @@
 // gRPC services and related logic
-pub mod trading_service;
+pub mod trading_service; // This now refers to the directory engine/src/services/trading_service/
 
 // This module will also contain the generated protobuf code.
 // The build script is configured to output to src/services/generated.
