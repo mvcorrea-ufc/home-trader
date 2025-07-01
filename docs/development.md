@@ -19,11 +19,13 @@ The GUI is built using the Dioxus framework. Key libraries include:
 
 ### OS Dependencies for GUI (Linux)
 
-When building the Dioxus-based GUI on Linux, you'll likely need the following development libraries:
+When building the Dioxus-based GUI on Linux, you'll likely need the following development libraries. These were the versions confirmed to work during setup:
 
 - **GTK3**: `sudo apt-get install libgtk-3-dev` (or equivalent for your distribution)
-- **WebKit2GTK**: `sudo apt-get install libwebkit2gtk-4.0-dev` (or equivalent for your distribution)
+- **WebKit2GTK**: `sudo apt-get install libwebkit2gtk-4.1-dev` (specifically version 4.1, or equivalent for your distribution)
+- **GLib 2.0**: `sudo apt-get install libglib2.0-dev` (or equivalent for your distribution)
+- **XDO**: `sudo apt-get install libxdo-dev` (or equivalent for your distribution)
 - **pkg-config**: `sudo apt-get install pkg-config` (often installed as part of a build-essential package)
 - **C compiler**: `sudo apt-get install build-essential` (provides gcc and other necessary tools)
 
-These dependencies are required by the underlying webview renderer that Dioxus uses for desktop applications. Ensure these are installed before attempting to build or run the GUI client.
+These dependencies are required by the underlying webview renderer and other libraries that Dioxus uses for desktop applications. Ensure these are installed before attempting to build or run the GUI client.
