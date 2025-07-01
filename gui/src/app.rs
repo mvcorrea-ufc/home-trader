@@ -1,11 +1,14 @@
 #![allow(non_snake_case)]
 use dioxus::prelude::*;
 use dioxus_desktop::use_window; // Import use_window
+use chrono::{TimeZone, Utc}; // For creating DateTime<Utc>
 
 // Import necessary types
 use crate::components::command_palette::CommandPalette;
+use crate::components::chart::candlestick::CandlestickChart; // Import CandlestickChart
 use crate::config::AppConfig;
 use crate::state::app_state::AppState;
+use shared::models::Candle; // Import Candle model
 
 #[component]
 pub fn App() -> Element {
@@ -24,6 +27,37 @@ pub fn App() -> Element {
     let window = use_window(cx);
     let app_state = use_shared_state::<AppState>(cx).unwrap();
     let app_config_for_shortcut = app_config_provider.read().clone();
+
+    // Create sample candle data
+    let sample_candles = use_ref(cx, || {
+        vec![
+            Candle {
+                symbol: "SAMPLE".to_string(),
+                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 30, 0).unwrap(),
+                open: 100.0, high: 105.0, low: 98.0, close: 102.0, volume: 1000.0, trades: 100,
+            },
+            Candle {
+                symbol: "SAMPLE".to_string(),
+                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 31, 0).unwrap(),
+                open: 102.0, high: 103.0, low: 99.0, close: 100.0, volume: 1200.0, trades: 120,
+            },
+            Candle {
+                symbol: "SAMPLE".to_string(),
+                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 32, 0).unwrap(),
+                open: 100.0, high: 108.0, low: 100.0, close: 107.0, volume: 1500.0, trades: 150,
+            },
+            Candle {
+                symbol: "SAMPLE".to_string(),
+                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 33, 0).unwrap(),
+                open: 107.0, high: 110.0, low: 105.0, close: 106.0, volume: 1300.0, trades: 130,
+            },
+            Candle {
+                symbol: "SAMPLE".to_string(),
+                timestamp: Utc.with_ymd_and_hms(2024, 1, 1, 9, 34, 0).unwrap(),
+                open: 106.0, high: 106.0, low: 102.0, close: 103.0, volume: 1100.0, trades: 110,
+            },
+        ]
+    });
 
     // Effect for global keyboard listener
     // This is a common way to handle global events in Dioxus.
@@ -73,17 +107,33 @@ pub fn App() -> Element {
 
             // Render the CommandPalette component
             CommandPalette {},
-            // Placeholder for other UI elements
+            // Main content area
             div {
                 id: "main-content",
-                style: "padding: 20px; text-align: center; color: #ddd; background-color: #222; height: 100vh;",
-                h1 { "Home Trader" }
-                p { "Press '{app_config.shortcuts.command_palette}' to open/close the command palette." }
-                // Fallback button if shortcut is problematic
-                button {
-                    onclick: move |_| app_state_provider.write().command_palette_visible = !app_state_provider.read().command_palette_visible,
-                    "Toggle Command Palette (Button)"
+                style: "padding: 20px; color: #ddd; background-color: #1e1e1e; height: calc(100vh - 40px); display: flex; flex-direction: column; align-items: center;", // Adjusted style
+
+                // Title and Command Palette toggle info
+                div {
+                    style: "text-align: center; margin-bottom: 20px;",
+                    h1 { "Home Trader" }
+                    p { "Press '{app_config.shortcuts.command_palette}' to open/close the command palette." }
+                    button {
+                        onclick: move |_| app_state_provider.write().command_palette_visible = !app_state_provider.read().command_palette_visible,
+                        style: "padding: 8px 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;",
+                        "Toggle Command Palette"
+                    }
                 }
+
+                // Candlestick Chart
+                div {
+                    style: "margin-top: 20px; border: 1px solid #555; box-shadow: 0 0 10px rgba(0,0,0,0.5);",
+                    CandlestickChart {
+                        candles: sample_candles.read().clone(), // Pass the sample data
+                        width: 800.0,  // Can be made dynamic or from config later
+                        height: 450.0, // Can be made dynamic or from config later
+                    }
+                }
+                // Placeholder for other UI elements like Toolbar, Indicator controls etc.
             }
         }
     }
