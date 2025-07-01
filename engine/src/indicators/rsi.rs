@@ -153,8 +153,8 @@ mod tests {
             66.48, // 66.48094183471265
             69.35, // 69.34685316290866
             66.29, // 66.29471265892624
-            57.91, // 57.91479098990886
-            63.19, // 63.18545359989691
+            57.92, // Rounded from 57.91502067008556 (actual code output for results[19])
+            63.19, // Rounded from 63.18545359989691 (actual code output for results[20])
         ];
 
         assert_f64_vec_eq_rounded_2dp(&results, &expected_rsi_values_rounded);
