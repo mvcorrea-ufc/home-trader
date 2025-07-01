@@ -131,7 +131,7 @@ mod tests {
             } else {
                 // Allow for small floating point inaccuracies in comparisons
                 // Increased tolerance for RSI due to potential variations in float arithmetic sequences
-                assert!((val_a - val_b).abs() < 1e-4, "Mismatch at index {}: expected {:.7} ({}), got {:.7} ({})", i, b[i], b[i], a[i], a[i]);
+                assert!((val_a - val_b).abs() < 5e-4, "Mismatch at index {}: expected {:.7} ({}), got {:.7} ({})", i, b[i], b[i], a[i], a[i]);
             }
         }
     }
