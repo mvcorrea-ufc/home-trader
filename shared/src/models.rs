@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)] // Added PartialEq
 pub struct Candle {
     pub symbol: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: DateTime<Utc>, // DateTime<Utc> implements PartialEq
     pub open: f64,
     pub high: f64,
     pub low: f64,
@@ -30,9 +30,9 @@ pub enum TimeFrame {
     Day1,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)] // Added PartialEq
 pub struct Indicator {
     pub name: String,
-    pub parameters: serde_json::Value,
+    pub parameters: serde_json::Value, // serde_json::Value implements PartialEq
     pub values: Vec<f64>,
 }

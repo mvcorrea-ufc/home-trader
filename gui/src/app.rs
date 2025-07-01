@@ -69,47 +69,42 @@ pub fn App() -> Element {
     // Drop the read lock
     drop(app_state_reader);
 
-    // Effect for global keyboard listener
-    let app_config_for_shortcut = app_config_ref.read().clone();
-    let app_state_for_effect = app_state_ref.clone(); // Clone the UseSharedState handle
-    let window_for_effect = window.clone(); // DesktopContext is Clone
-
-    use_effect(move || { // Removed cx and (), added move for captures
-        let shortcut_str = app_config_for_shortcut.shortcuts.command_palette.to_lowercase();
-        let mut ctrl_pressed = false;
-
-        let keydown_listener = window_for_effect.new_event_handler("keydown", move |event: Event<KeyboardData>| {
-            if event.data.key().to_string().to_lowercase() == "control" {
-                ctrl_pressed = true;
-            } else if ctrl_pressed && event.data.key().to_string().to_lowercase() == shortcut_str.trim_start_matches("ctrl+") {
-                let mut app_state_writer = app_state_for_effect.write(); // Use the cloned handle
-                app_state_writer.command_palette_visible = !app_state_writer.command_palette_visible;
-                if app_state_writer.command_palette_visible {
-                    tracing::info!("Command Palette Toggled ON via shortcut. Input field should autofocus.");
-                }
-            }
-        });
-
-        let keyup_listener = window_for_effect.new_event_handler("keyup", move |event: Event<KeyboardData>| {
-            if event.data.key().to_string().to_lowercase() == "control" {
-                ctrl_pressed = false;
-            }
-        });
-
-        // Return a cleanup function (optional, Dioxus handles listener cleanup on context drop)
-        // To be explicit, one could store listeners and drop them, but not strictly needed here.
-        move || {
-            // keydown_listener.drop(); // This syntax might not be exact, depends on how listeners are managed
-            // keyup_listener.drop();
-        }
-    });
+    // State for tracking Ctrl key press for global shortcut
+    let ctrl_pressed_for_shortcut = use_ref(|| false);
+    // Clone necessary handles for onkeydown/onkeyup closures
+    let app_state_for_shortcut_handler = app_state_ref.clone();
+    let app_config_for_shortcut_handler = app_config_ref.read().clone();
 
 
     rsx! {
         div {
-            // It's good practice to allow the root div to be focusable for global key events.
-            // tabindex: "0", // Making the div focusable. Might not be strictly needed if window events work well.
-            // style: "outline: none; width: 100%; height: 100%;", // Remove default focus outline
+            // Make the root div focusable and handle key events for global-like shortcuts
+            tabindex: "0", // Important for receiving focus and key events
+            style: "outline: none; width: 100%; height: 100%;", // Remove default focus outline
+            onmounted: move |event| {
+                // Attempt to focus the div when it's mounted to catch keyboard events.
+                // This might require specific handling based on Dioxus version for focusing elements.
+                // For now, rely on tabindex and user clicking into the app area.
+                // Or, use JS interop to focus if absolutely necessary.
+                tracing::info!("Root div mounted. Set tabindex=0 to allow focus for keyboard shortcuts.");
+            },
+            onkeydown: move |event: Event<KeyboardData>| {
+                let shortcut_str = app_config_for_shortcut_handler.shortcuts.command_palette.to_lowercase();
+                if event.key().to_string().to_lowercase() == "control" {
+                    *ctrl_pressed_for_shortcut.write() = true;
+                } else if *ctrl_pressed_for_shortcut.read() && event.key().to_string().to_lowercase() == shortcut_str.trim_start_matches("ctrl+") {
+                    let mut app_state_writer = app_state_for_shortcut_handler.write();
+                    app_state_writer.command_palette_visible = !app_state_writer.command_palette_visible;
+                    if app_state_writer.command_palette_visible {
+                        tracing::info!("Command Palette Toggled ON via shortcut. Input field should autofocus.");
+                    }
+                }
+            },
+            onkeyup: move |event: Event<KeyboardData>| {
+                if event.key().to_string().to_lowercase() == "control" {
+                    *ctrl_pressed_for_shortcut.write() = false;
+                }
+            },
 
             // Render the CommandPalette component
             CommandPalette {},

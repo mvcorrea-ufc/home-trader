@@ -11,32 +11,41 @@ use crate::components::chart::indicators::IndicatorOverlay; // Import IndicatorO
 // - Handle zooming, panning, and scaling.
 // - Potentially interact with other components like indicator overlays.
 
-#[derive(Props, PartialEq, Clone)]
-pub struct CandlestickChartProps {
-    pub candles: Vec<Candle>,
-    #[props(default = 800.0)] // Default width
-    pub width: f64,
-    #[props(default = 400.0)] // Default height
-    pub height: f64,
-    #[props(optional)] // Indicators are optional
-    pub indicator_data: Option<Vec<Indicator>>,
-    // TODO: Add other config like colors from AppConfig later
-}
+// Props are now defined as function arguments for the component
+// #[derive(Props, PartialEq, Clone)] // Removed manual Props struct
+// pub struct CandlestickChartProps {
+//     pub candles: Vec<Candle>,
+//     #[props(default = 800.0)]
+//     pub width: f64,
+//     #[props(default = 400.0)]
+//     pub height: f64,
+//     #[props(optional)]
+//     pub indicator_data: Option<Vec<Indicator>>,
+// }
 
 #[component]
-pub fn CandlestickChart(cx: Scope<CandlestickChartProps>) -> Element {
-    if cx.props.candles.is_empty() {
-        return cx.render(rsx! {
+pub fn CandlestickChart(
+    candles: Vec<Candle>,
+    #[props(default = 800.0)] width: f64,
+    #[props(default = 400.0)] height: f64,
+    #[props(optional)] indicator_data: Option<Vec<Indicator>>,
+) -> Element {
+    if candles.is_empty() {
+        // Need cx to render, but it's not an argument for #[component] functions in Dioxus 0.5 style.
+        // The function body itself is the render context.
+        // So, we return Element directly.
+        return rsx! { // No cx.render() needed here.
             div {
-                style: "width: {cx.props.width}px; height: {cx.props.height}px; display: flex; align-items: center; justify-content: center; border: 1px solid #ccc; background-color: #f0f0f0;",
+                style: "width: {width}px; height: {height}px; display: flex; align-items: center; justify-content: center; border: 1px solid #ccc; background-color: #f0f0f0;",
                 "No candle data available."
             }
-        });
+        };
     }
 
-    let candles = &cx.props.candles;
-    let chart_width = cx.props.width;
-    let chart_height = cx.props.height;
+    // Access props directly by their names
+    // let candles = &candles; // candles is already a direct argument
+    // let chart_width = width; // width is a direct argument
+    // let chart_height = height; // height is a direct argument
 
     // Define margins
     let margin_top = 20.0;
@@ -44,8 +53,9 @@ pub fn CandlestickChart(cx: Scope<CandlestickChartProps>) -> Element {
     let margin_left = 50.0;
     let margin_right = 20.0;
 
-    let plot_width = chart_width - margin_left - margin_right;
-    let plot_height = chart_height - margin_top - margin_bottom;
+    // Use direct prop values for width and height
+    let plot_width = width - margin_left - margin_right;
+    let plot_height = height - margin_top - margin_bottom;
 
     // Determine price range
     let mut min_price = candles.first().map_or(0.0, |c| c.low);
@@ -124,13 +134,16 @@ pub fn CandlestickChart(cx: Scope<CandlestickChartProps>) -> Element {
         }
     });
 
-    cx.render(rsx! {
+    // The function body implicitly returns this rsx block if it's the last expression
+    rsx! {
         div {
             class: "candlestick-chart-container",
-            style: "width: {chart_width}px; height: {chart_height}px; border: 1px solid #444; background-color: #222; color: #eee;",
+            // Use direct prop values for width and height in style
+            style: "width: {width}px; height: {height}px; border: 1px solid #444; background-color: #222; color: #eee;",
             svg {
-                width: "{chart_width}",
-                height: "{chart_height}",
+                // Use direct prop values
+                width: "{width}",
+                height: "{height}",
                 // Background for the plot area
                 rect {
                     x: "{margin_left}",
@@ -141,14 +154,13 @@ pub fn CandlestickChart(cx: Scope<CandlestickChartProps>) -> Element {
                 }
                 // Group for actual candle elements
                 g {
-                    // The transform for the group itself is not strictly needed here
-                    // as coordinates are calculated relative to the SVG root.
-                    // However, individual elements are positioned using margin_left and margin_top logic.
-                    candle_elements
+                    // candle_elements is an iterator, rsx! can render iterators of Elements
+                    {candle_elements}
                 }
                 // Render IndicatorOverlay if data is provided
                 {
-                    if let Some(indicators) = &cx.props.indicator_data {
+                    // Access indicator_data directly
+                    if let Some(indicators) = &indicator_data {
                         if !indicators.is_empty() {
                             rsx! {
                                 IndicatorOverlay {
@@ -162,8 +174,8 @@ pub fn CandlestickChart(cx: Scope<CandlestickChartProps>) -> Element {
                                     num_candles_on_chart: candles.len()
                                 }
                             }
-                        } else { None }
-                    } else { None }
+                        } else { None } // Render nothing if indicators is Some but empty
+                    } else { None } // Render nothing if indicator_data is None
                 }
                 // Remove placeholder text or comment out
                 /*

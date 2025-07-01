@@ -3,77 +3,77 @@
 use dioxus::prelude::*;
 use shared::models::Indicator; // Import the Indicator struct
 
-#[derive(Props, PartialEq, Clone)]
-pub struct IndicatorOverlayProps {
-    pub indicators: Vec<Indicator>,
-    pub min_price: f64,
-    pub max_price: f64,
-    pub plot_height: f64,
-    // pub plot_width: f64, // Not directly needed if candle_plot_width and num_candles are used for X
-    pub margin_left: f64,
-    pub margin_top: f64,
-    pub candle_plot_width: f64, // Width allocated for each candle slot (body + spacing)
-    pub num_candles_on_chart: usize, // To align indicator data points correctly
-                                     // Optional: Global styling for indicators, or individual indicators can carry their style.
-                                     // pub default_color: Option<String>,
-                                     // pub default_stroke_width: Option<f64>,
-}
+// Removed manual Props struct definition
+// #[derive(Props, PartialEq, Clone)]
+// pub struct IndicatorOverlayProps {
+//     pub indicators: Vec<Indicator>,
+//     pub min_price: f64,
+//     pub max_price: f64,
+//     pub plot_height: f64,
+//     pub margin_left: f64,
+//     pub margin_top: f64,
+//     pub candle_plot_width: f64,
+//     pub num_candles_on_chart: usize,
+// }
 
 #[component]
-pub fn IndicatorOverlay(cx: Scope<IndicatorOverlayProps>) -> Element {
-    if cx.props.indicators.is_empty() {
-        return None; // Don't render anything if there are no indicators
+pub fn IndicatorOverlay(
+    // Props are now direct function arguments
+    indicators: Vec<Indicator>,
+    min_price: f64,
+    max_price: f64,
+    plot_height: f64,
+    margin_left: f64,
+    margin_top: f64,
+    candle_plot_width: f64,
+    num_candles_on_chart: usize,
+) -> Element {
+    if indicators.is_empty() {
+        return None;
     }
 
-    let props = &cx.props;
+    // Access props directly by their names
+    let price_range = if (max_price - min_price) > 0.0 { max_price - min_price } else { 1.0 };
+    let y_scale_factor = plot_height / price_range;
+    let price_to_y = |price_val: f64| margin_top + (max_price - price_val) * y_scale_factor;
 
-    // Function to convert price to Y coordinate for indicators
-    let price_range = if (props.max_price - props.min_price) > 0.0 { props.max_price - props.min_price } else { 1.0 };
-    let y_scale_factor = props.plot_height / price_range;
-    let price_to_y = |price: f64| props.margin_top + (props.max_price - price) * y_scale_factor;
-
-    // Create SVG elements for each indicator
-    let indicator_lines = props.indicators.iter().filter(|ind| !ind.values.is_empty()).map(|indicator| {
+    let indicator_line_elements = indicators.iter().filter(|ind| !ind.values.is_empty()).map(|indicator| {
         let mut points = String::new();
         for (i, &value) in indicator.values.iter().enumerate() {
-            // Ensure we don't try to plot more indicator points than candles visible.
-            // Or, if indicator values can be sparse, this needs more sophisticated handling.
-            // For now, assume indicator.values.len() <= num_candles_on_chart
-            if i >= props.num_candles_on_chart { break; }
+            if i >= num_candles_on_chart { break; }
 
-            // Calculate X: center of the candle slot
-            let x = props.margin_left + (i as f64 * props.candle_plot_width) + (props.candle_plot_width / 2.0);
+            let x = margin_left + (i as f64 * candle_plot_width) + (candle_plot_width / 2.0);
             let y = price_to_y(value);
             points.push_str(&format!("{:.2},{:.2} ", x, y));
         }
-        points = points.trim_end().to_string(); // Remove trailing space
+        points = points.trim_end().to_string();
 
-        // TODO: Use color from indicator data or AppConfig later
         let line_color = match indicator.name.to_lowercase().as_str() {
-            "sma" => "#FFC107", // Amber
-            "ema" => "#03A9F4", // Light Blue
-            _ => "#9C27B0"      // Purple (default)
+            "sma" => "#FFC107",
+            "ema" => "#03A9F4",
+            _ => "#9C27B0"
         };
-        let stroke_width = 2.0; // TODO: Make configurable
+        let stroke_width_val = 2.0;
 
         if points.is_empty() {
-            None // Return None if no points were generated for this indicator
+            None
         } else {
             Some(rsx! {
                 polyline {
                     points: "{points}",
                     fill: "none",
                     stroke: "{line_color}",
-                    stroke_width: "{stroke_width}"
+                    stroke_width: "{stroke_width_val}"
                 }
             })
         }
-    }).filter_map(|x| x); // Filter out None values if an indicator had no points
+    }).filter_map(|x| x);
 
-    cx.render(rsx! {
-        g { // Group element for all indicator lines
+    // Return rsx! directly
+    rsx! {
+        g {
             class: "indicator-overlay-group",
-            indicator_lines
+            {indicator_line_elements} // Render the iterator of Elements
         }
         // Placeholder text removed, actual lines will be rendered.
         // If needed for debugging specific props:

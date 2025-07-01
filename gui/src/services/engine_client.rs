@@ -28,8 +28,12 @@ pub struct EngineClient {
 
 impl EngineClient {
     pub async fn new(endpoint: String) -> Result<Self> {
-        // Establish gRPC connection
-        let client = TradingEngineClient::connect(endpoint).await?;
+        // Establish gRPC connection by first creating a channel
+        let channel = Channel::from_shared(endpoint)
+            .map_err(|e| anyhow::anyhow!("Failed to create URI for gRPC channel: {}", e))?
+            .connect()
+            .await?;
+        let client = TradingEngineClient::new(channel);
         Ok(Self { client })
     }
 

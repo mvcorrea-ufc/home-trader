@@ -7,8 +7,9 @@ use dioxus::prelude::*;
 // These actions might trigger commands in the command palette or directly interact with app state.
 
 #[component]
-pub fn Toolbar(cx: Scope) -> Element {
-    cx.render(rsx! {
+pub fn Toolbar() -> Element { // Removed cx: Scope
+    // The function body is now the render context implicitly
+    rsx! {
         div {
             class: "toolbar-placeholder",
             // TODO: Implement toolbar buttons and actions
