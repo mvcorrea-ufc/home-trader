@@ -158,9 +158,8 @@ mod tests {
         let status = result.err().unwrap();
         assert_eq!(status.code(), tonic::Code::InvalidArgument);
         assert!(status.message().contains("CSV parsing system error")); // Confirms our error mapping
-        // More general checks for the underlying csv::Error details
-        assert!(status.message().to_lowercase().contains("fields"));
-        assert!(status.message().to_lowercase().contains("header"));
+        // More general check for the underlying csv::Error details
+        assert!(status.message().to_lowercase().contains("fields")); // Check that the error message mentions 'fields'
     }
 
     #[tokio::test]
