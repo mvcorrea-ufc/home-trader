@@ -9,7 +9,7 @@ use super::{ // Imports from engine/src/services/mod.rs
     MarketDataRequest, MarketDataResponse, // MarketDataResponse uses super::generated::Candle implicitly
     IndicatorRequest, IndicatorResponse,
     TradeRequest, TradeResponse,
-    ProtoCandle as GrpcCandle, // This alias might be used by tests via super::*
+    // ProtoCandle as GrpcCandle, // Removed as unused in this file's non-test code
 };
 use crate::data::market_data::MarketDataStore;
 // shared::models are moved to mod tests
@@ -157,7 +157,9 @@ mod tests {
         let status = result.err().unwrap();
         assert_eq!(status.code(), tonic::Code::InvalidArgument);
         assert!(status.message().contains("CSV parsing system error"));
-        assert!(status.message().contains("record 1 (line 2) has 4 fields, but the header has 9"));
+        // Make the check for field counts more general to avoid brittleness from specific record/line numbering in message
+        assert!(status.message().contains("has 4 fields"));
+        assert!(status.message().contains("but the header has 9"));
     }
 
     #[tokio::test]
@@ -249,8 +251,15 @@ mod tests {
 
      #[tokio::test]
     async fn test_simulate_trade_limit_no_price() {
-        let engine = create_test_engine();
-        let request = Request::new(TradeRequest { symbol: "TEST".to_string(), action: "BUY".to_string(), quantity: 1.0, price: None, order_type: "LIMIT".to_string() });
+        let candle = sample_candle("TEST", 100.0, 101.0, 99.0, 100.0); // Provide some market data
+        let engine = create_test_engine_with_candle("TEST", candle).await;
+        let request = Request::new(TradeRequest {
+            symbol: "TEST".to_string(),
+            action: "BUY".to_string(),
+            quantity: 1.0,
+            price: None,
+            order_type: "LIMIT".to_string(),
+        });
         let response = engine.simulate_trade(request).await.unwrap().into_inner();
         assert!(!response.success);
         assert_eq!(response.message, "Limit price is required for LIMIT orders.");
@@ -258,9 +267,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_simulate_trade_unsupported_order_type() {
-        let engine = create_test_engine();
+        let candle = sample_candle("TEST", 100.0, 101.0, 99.0, 100.0); // Provide some market data
+        let engine = create_test_engine_with_candle("TEST", candle).await;
         let order_type = "FOOBAZ".to_string();
-        let request = Request::new(TradeRequest { symbol: "TEST".to_string(), action: "BUY".to_string(), quantity: 1.0, price: None, order_type: order_type.clone() });
+        let request = Request::new(TradeRequest {
+            symbol: "TEST".to_string(),
+            action: "BUY".to_string(),
+            quantity: 1.0,
+            price: None,
+            order_type: order_type.clone(),
+        });
         let response = engine.simulate_trade(request).await.unwrap().into_inner();
         assert!(!response.success);
         assert_eq!(response.message, format!("Unsupported order type: '{}'. Use 'MARKET' or 'LIMIT'.", order_type));

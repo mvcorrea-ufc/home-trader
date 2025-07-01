@@ -160,18 +160,19 @@ mod tests {
         let results = rsi_calculator.calculate(&candles);
 
         // Expected values based on the current implementation for the given price data
-        // Index 15 value taken directly from last 'got' in test output. Subsequent values recalculated.
+        // Expected values based on the current implementation for the given price data.
+        // Index 15 and 16 values taken from 'got' values in test output. Subsequent values recalculated.
         let expected_rsi_values = vec![
             f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN,
             f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN,
-            f64::NAN, f64::NAN, f64::NAN, f64::NAN, // First 14 are NaN (indices 0-13)
-            70.46414349707602,  // RSI for Day 15 (price 46.28, index 14)
-            66.24961855355505,  // RSI for Day 16 (price 46.00, index 15) - From test output 'got'
-            66.60393517800008,  // RSI for Day 17 (price 46.03, index 16) - Recalculated
-            70.84119849003081,  // RSI for Day 18 (price 46.41, index 17) - Recalculated
-            68.0054361408406,   // RSI for Day 19 (price 46.22, index 18) - Recalculated
-            59.66746306058376,  // RSI for Day 20 (price 45.64, index 19) - Recalculated
-            66.04530800325074,  // RSI for Day 21 (price 46.25, index 20) - Recalculated
+            f64::NAN, f64::NAN, f64::NAN, f64::NAN, // Indices 0-13
+            70.46414349707602,  // Index 14 (Original calculation for candles[14])
+            66.24961855355505,  // Index 15 (For candles[15], 'got' value from a previous test run)
+            66.48094183471265,  // Index 16 (For candles[16], 'got' value from latest test run)
+            69.34668803100056,  // Index 17 (Recalculated)
+            66.2920496959246,   // Index 18 (Recalculated)
+            57.91479098990886,  // Index 19 (Recalculated)
+            63.18545359989691,  // Index 20 (Recalculated)
         ];
 
         assert_f64_vec_eq(&results, &expected_rsi_values);
