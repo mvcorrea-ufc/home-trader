@@ -28,8 +28,8 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # GUI Framework (Dioxus)
-dioxus = "0.5"
-dioxus-desktop = "0.5"
+dioxus = "0.6.3"
+dioxus-desktop = "0.6.3"
 # dioxus-web = "0.5" # For future WebAssembly support, can be added when needed
 
 # Tokio stream utilities

@@ -18,7 +18,6 @@ use shared::models::Indicator; // Import the Indicator struct
 
 #[component]
 pub fn IndicatorOverlay(
-    // Props are now direct function arguments
     indicators: Vec<Indicator>,
     min_price: f64,
     max_price: f64,
@@ -26,8 +25,8 @@ pub fn IndicatorOverlay(
     margin_left: f64,
     margin_top: f64,
     candle_plot_width: f64,
-    num_candles_on_chart: usize,
-) -> Element {
+    num_candles_on_chart: usize)
+-> Element {
     if indicators.is_empty() {
         return None;
     }
@@ -87,4 +86,4 @@ pub fn IndicatorOverlay(
         }
         */
     })
-}
+// Removed extra closing brace

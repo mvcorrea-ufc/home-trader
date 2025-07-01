@@ -26,11 +26,10 @@ use crate::components::chart::indicators::IndicatorOverlay; // Import IndicatorO
 #[component]
 pub fn CandlestickChart(
     candles: Vec<Candle>,
-    // Removing #[props] attributes to simplify signature for parser
     width: f64,
     height: f64,
-    indicator_data: Option<Vec<Indicator>>,
-) -> Element {
+    indicator_data: Option<Vec<Indicator>>)
+-> Element {
     if candles.is_empty() {
         // Need cx to render, but it's not an argument for #[component] functions in Dioxus 0.5 style.
         // The function body itself is the render context.
@@ -199,4 +198,4 @@ pub fn CandlestickChart(
             }
         }
     })
-}
+// Removed extra closing brace
