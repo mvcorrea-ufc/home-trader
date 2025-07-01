@@ -89,7 +89,7 @@ pub fn CandlestickChart(
     let candle_spacing = candle_plot_width - candle_width;
 
 
-    let candle_elements = candles.iter().enumerate().map(|(i, candle)| {
+    let candle_elements: Vec<Element> = candles.iter().enumerate().map(|(i, candle)| {
         let x_base = margin_left + (i as f64 * candle_plot_width);
         let candle_x = x_base + candle_spacing / 2.0;
 
@@ -133,7 +133,7 @@ pub fn CandlestickChart(
                 // stroke_width: "0.5"
             }
         }
-    });
+    }).collect();
 
     // The function body implicitly returns this rsx block if it's the last expression
     rsx! {
